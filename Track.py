@@ -8,7 +8,7 @@ whether to generate animation output, etc. See Readme.
 Derived from previous particle tracking work by Manning, Muse, Cui, Warren.
 """
 
-#import sys
+import sys
 import pytz
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,14 +27,14 @@ Option 4: Area(box) track.
 ######## Hard codes ##########
 Option = 1 # 1,2,3,4
 print 'Option %d'%Option
-MODEL = 'FVCOM'     # 'FVCOM', 'ROMS'
-GRID = 'massbay'    # Apply to FVCOM. '30yr', 'massbaya:10 layers', 'GOM3a', 'GOM3:40 layers' or 'massbay'
-depth = -1
-track_days = 1      #MODEL track time(days)
-track_way = 'backward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
+MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
+GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
+depth = 1    # depth below ocean surface, positive
+track_days = 1     #MODEL track time(days)
+track_way = 'forward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
 image_style = 'plot'      # Two option: 'plot', animation
 # You can track form now by specify start_time = datetime.now(pytz.UTC) 
-start_time = datetime(2015,6,22,12,45,0,0,pytz.UTC)#datetime.now(pytz.UTC) 
+start_time = datetime(2015,8,10,12,45,0,0,pytz.UTC)#datetime.now(pytz.UTC) 
 end_time = start_time + timedelta(track_days)
 model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
 streamline = 'OFF'
@@ -42,12 +42,12 @@ save_dir = '/home/bling/Documents/Results/'
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '156420701'#152300811 
+    drifter_ID = '157410703'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (42.13107 , -70.07243)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (38.734,-73.685)  # 42.1, -70.6 Point data structure:(lat,lon)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -94,25 +94,27 @@ if Option == 1:
     if track_way=='backward':
         end_time = start_time 
         start_time = end_time - timedelta(track_days)  #''' 
-    if MODEL=='FVCOM':
-        get_obj =  get_fvcom(GRID)
+    if MODEL in GRIDS:
+        get_obj =  get_fvcom(MODEL)
         print dr_points['time'][-1]
         url_fvcom = get_obj.get_url(start_time,end_time)
         b_points = get_obj.get_data(url_fvcom) # b_points is model boundary points.
-        point2,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)
+        point,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)
         
-    if MODEL=='ROMS':
+    if MODEL=='ROMS':        
+        end_time = dr_points['time'][-1] + timedelta(track_days)
         get_obj = get_roms()
-        end_time2 = dr_points['time'][-1] + timedelta(track_days)
-        url_rom2 = get_obj.get_url(dr_points['time'][-1],end_time2)
-        lon_rho,lat_rho,u,v = get_obj.get_data(url_rom2)
-        point2 = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],lon_rho,lat_rho,u,v,track_way)#,DEPTH
-        
-    model_points['lon'].extend(point2['lon']); model_points['lat'].extend(point2['lat'])
+        url_roms = get_obj.get_url(dr_points['time'][-1],end_time)
+        get_obj.get_data(url_roms)
+        point = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)#,DEPTH
+        if len(point['lon'])==1:
+            print 'Start point on the land or out of Model area.'
+            sys.exit('Invalid point')
+    model_points['lon'].extend(point['lon']); model_points['lat'].extend(point['lat'])
     loop_length.append(len(model_points['lon']))
     #np.savez('model_points.npz',lon=model_points['lon'],lat=model_points['lat'])
     dripath = totdis(dr_points['lon'],dr_points['lat'])
-    modpath = totdis(point2['lon'],point2['lat'])
+    modpath = totdis(point['lon'],point['lat'])
     discrepancy = modpath-dripath
     print 'Model path length: ',modpath,'\nDrifter path length: ',dripath,'\nDiscrepancy: ',discrepancy,discrepancy/dripath*100
    
@@ -130,7 +132,7 @@ if Option == 1:
         image_style = 'animation'
         
     ########################### Plot #####################################
-    plt.title('Drifter: {0} {1} {2}'.format(drifter_ID,MODEL,GRID))    
+    plt.title('Drifter: {0} {1}'.format(drifter_ID,MODEL))    
     #colors=uniquecolors(len(points['lats'])) #config colors
     an2 = str(dr_points['time'][-1].strftime('%m/%d-%H:%M'))    
     
@@ -177,8 +179,8 @@ if Option==2 or Option==3:
         end_time = start_time 
         start_time = end_time - timedelta(track_days)  #'''    
     
-    if MODEL=='FVCOM':
-        get_obj = get_fvcom(GRID)
+    if MODEL in GRIDS:
+        get_obj = get_fvcom(MODEL)
         url_fvcom = get_obj.get_url(start_time,end_time)
         b_points = get_obj.get_data(url_fvcom) 
         
@@ -207,9 +209,12 @@ if Option==2 or Option==3:
     if MODEL=='ROMS': 
         get_obj = get_roms()
         url_roms = get_obj.get_url(start_time,end_time)
-        lon_rho,lat_rho,u,v = get_obj.get_data(url_roms)
+        get_obj.get_data(url_roms)
         for i in range(stp_num):
-            point = get_obj.get_track(st_lon[i],st_lat[i],lon_rho,lat_rho,u,v,track_way)
+            point = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way)
+            if len(point['lon'])==1:
+                print 'Start point on the land or out of Model area.'
+                sys.exit('Invalid point')
             lon_set[i] = point['lon']; lat_set[i] = point['lat']
             loop_length.append(len(point['lon']))
             
@@ -227,7 +232,7 @@ if Option==2 or Option==3:
         for i in range(stp_num):
             points['lons'].extend(lon_set[i])
             points['lats'].extend(lat_set[i])
-    print len(points['lons'])
+    print 'Points quantity: ',len(points['lons'])
     
     ######################### 2|3 Features Option #############################    
     if streamline == 'ON':
@@ -300,8 +305,8 @@ if Option==4:
         end_time = start_time 
         start_time = end_time - timedelta(track_days)  #'''
      
-    if MODEL=='FVCOM':            
-        get_obj = get_fvcom(GRID)
+    if MODEL in GRIDS:            
+        get_obj = get_fvcom(MODEL)
         url_fvcom = get_obj.get_url(start_time,end_time)
         b_points = get_obj.get_data(url_fvcom)# b_points is model boundary points.        
         
