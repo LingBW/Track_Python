@@ -288,7 +288,7 @@ class track(object):
         '''check if there are no points inside the given area'''        
         
         if not index[0].tolist():          # bbox covers no area
-            print 'This point is out of the model area.'
+            print 'This point out of the model area or hits the land.'
             raise Exception()
         else:
             return index
@@ -336,56 +336,64 @@ class get_roms(track):
     
     def __init__(self):
         pass
+    
+    def nearest_point(self, lon, lat, lons, lats, length=0.06):  #0.3/5==0.06
+        '''Find the nearest point to (lon,lat) from (lons,lats),
+           return the nearest-point (lon,lat)
+           author: Bingwei'''
+        p = Path.circle((lon,lat),radius=length)
+        #numpy.vstack(tup):Stack arrays in sequence vertically
+        points = np.vstack((lons.flatten(),lats.flatten())).T  
+        
+        insidep = []
+        #collect the points included in Path.
+        for i in xrange(len(points)):
+            if p.contains_point(points[i]):# .contains_point return 0 or 1
+                insidep.append(points[i])  
+        # if insidep is null, there is no point in the path.
+        if not insidep:
+            print 'This point out of the model area or hits the land.'
+            raise Exception()
+        #calculate the distance of every points in insidep to (lon,lat)
+        distancelist = []
+        for i in insidep:
+            ss=math.sqrt((lon-i[0])**2+(lat-i[1])**2)
+            distancelist.append(ss)
+        # find index of the min-distance
+        mindex = np.argmin(distancelist)
+        # location the point
+        lonp = insidep[mindex][0]; latp = insidep[mindex][1]
+        
+        return lonp,latp
         
     def get_url(self, starttime, endtime):
         '''
         get url according to starttime and endtime.
         '''
-        self.starttime = starttime
+        starttime = starttime
         self.hours = int((endtime-starttime).total_seconds()/60/60) # get total hours
         # time_r = datetime(year=2006,month=1,day=9,hour=1,minute=0)
         url_oceantime = '''http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his_Best/ESPRESSO_Real-Time_v2_History_Best_Available_best.ncd?time'''
-        self.oceantime = netCDF4.Dataset(url_oceantime).variables['time'][:]
-        t1 = (starttime - datetime(2013,05,18, tzinfo=pytz.UTC)).total_seconds()/3600 # for url2006 it's 2006,01,01
+        url = """http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his_Best/ESPRESSO_Real-Time_v2_History_Best_Available_best.ncd?
+        h[0:1:81][0:1:129],mask_rho[0:1:81][0:1:128],mask_u[0:1:81][0:1:128],mask_v[0:1:80][0:1:129],zeta[{0}:1:{1}][0:1:81][0:1:129],u[{0}:1:{1}][0:1:35][0:1:81][0:1:128],
+        v[{0}:1:{1}][0:1:35][0:1:80][0:1:129],s_rho[0:1:35],lon_rho[0:1:81][0:1:129],lat_rho[0:1:81][0:1:129],lon_u[0:1:81][0:1:128],lat_u[0:1:81][0:1:128],
+        lon_v[0:1:80][0:1:129],lat_v[0:1:80][0:1:129],time[0:1:19523]"""
+        oceantime = netCDF4.Dataset(url_oceantime).variables['time'][:]
+        # get number of hour from 05/18/2013
+        t1 = (starttime - datetime(2013,05,18, tzinfo=pytz.UTC)).total_seconds()/3600 
         t2 = (endtime - datetime(2013,05,18, tzinfo=pytz.UTC)).total_seconds()/3600
-        self.index1 = self.__closest_num(t1, self.oceantime)
-        self.index2 = self.__closest_num(t2, self.oceantime)
-        #print self.index1, self.index2
-        # index1 = (starttime - time_r).total_seconds()/60/60
-        # index2 = index1 + self.hours    
-        url = '''http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his_Best/ESPRESSO_Real-Time_v2_History_Best_Available_best.ncd?
-        h[0:1:81][0:1:129],mask_rho[0:1:81][0:1:129],u[{0}:1:{1}][0:1:35][0:1:81][0:1:128],
-        v[{0}:1:{1}][0:1:35][0:1:80][0:1:129],s_rho[0:1:35],lon_rho[0:1:81][0:1:129],lat_rho[0:1:81][0:1:129]'''
-        url = url.format(self.index1, self.index2)
+        t1 = int(round(t1)); t2 = int(round(t2))
+        # judge if the starttime and endtime in the model time horizon
+        if not t1 in oceantime or not t2 in oceantime:
+            print 'Specific tracking time out of model time horizon.'
+            raise Exception
+        index1 = np.where(oceantime==t1)[0][0]; #print index1
+        index2 = np.where(oceantime==t2)[0][0]; #print index2
+
+        url = url.format(index1, index2)
+        self.url=url
+        
         return url
-    def __closest_num(self, num, numlist, i=0):
-        '''
-        Return index of the closest number in the list
-        '''
-        index1,index2 = 0, len(numlist)  
-        indx = int(index2/2)
-        if not numlist[0] < num < numlist[-1]:
-            raise Exception('{0} is not in {1}'.format(str(num), str(numlist)))
-            
-        if index2 == 2:
-            l1, l2 = num-numlist[0], numlist[-1]-num
-            
-            if l1 < l2:
-                i = i
-                
-            else:
-                i = i+1
-                
-        elif num == numlist[indx]:
-            i = i + indx
-            
-        elif num > numlist[indx]:
-            i = self.__closest_num(num, numlist[indx:],
-                              i=i+indx)
-                              
-        elif num < numlist[indx]:
-            i = self.__closest_num(num, numlist[0:indx+1], i=i)
-        return i
     
     def shrink_data(self,lon,lat,lons,lats):
         lont = []; latt = []
@@ -396,6 +404,9 @@ class get_roms(track):
                 lont.append(pints[i][0])
                 latt.append(pints[i][1])
         lonl=np.array(lont); latl=np.array(latt)#'''
+        if not lont:
+            print 'point position error! shrink_data'
+            sys.exit()
         return lonl,latl
         
     def get_data(self, url):
@@ -403,44 +414,68 @@ class get_roms(track):
         return the data needed.
         url is from get_roms.get_url(starttime, endtime)
         '''
-        data = get_nc_data(url, 'lon_rho', 'lat_rho', 'mask_rho','u', 'v', 'h', 's_rho')
-        '''depth_layers = data['h'][index[0]][index[1]]*data['s_rho']  #[0]][index[1][0]]
-        layer = np.argmin(abs(depth_layers+depth))
-        print layer#'''
-        layer = 35
-        lon_rho = data['lon_rho'][:]
-        lat_rho = data['lat_rho'][:]
-        u = data['u'][:,layer]; v = data['v'][:,layer]
-        return lon_rho,lat_rho,u,v
+        data = get_nc_data(url, 'lon_rho','lat_rho','lon_u','lat_u','lon_v','lat_v','mask_rho','mask_u','mask_v','u','v','h','s_rho','zeta')
+        self.lon_rho = data['lon_rho'][:]; self.lat_rho = data['lat_rho'][:] 
+        self.lon_u,self.lat_u = data['lon_u'][:], data['lat_u'][:]
+        self.lon_v,self.lat_v = data['lon_v'][:], data['lat_v'][:]
+        self.h = data['h'][:]; self.s_rho = data['s_rho'][:]
+        self.mask_u = data['mask_u'][:]; self.mask_v = data['mask_v'][:]#; mask_rho = data['mask_rho'][:]
+        self.u = data['u']; self.v = data['v']; self.zeta = data['zeta']
+        #return data
         
-    def get_track(self,lon,lat,lon_rho,lat_rho,u,v,track_way):#, depth
+    def get_track(self,lon,lat,depth,track_way):#, depth
         '''
         get the nodes of specific time period
         lon, lat: start point
-        depth: 0~35, the 36th is the bottom.
+        depth: 0~35, the 0th is the bottom.
         '''
-        lonl,latl = self.shrink_data(lon,lat,lon_rho,lat_rho)
+        
+        lonrho,latrho = self.shrink_data(lon,lat,self.lon_rho,self.lat_rho)
+        lonu,latu = self.shrink_data(lon,lat,self.lon_u,self.lat_u)
+        lonv,latv = self.shrink_data(lon,lat,self.lon_v,self.lat_v)
         nodes = dict(lon=[lon], lat=[lat])
+
         try:
-            lonp,latp,nearestdistance = self.nearest_point_index(lon,lat,lonl,latl)
-            index1 = np.where(lon_rho==lonp)
-            index2 = np.where(lat_rho==latp)
-            index = np.intersect1d(index1,index2)
+            lonrp,latrp = self.nearest_point(lon,lat,lonrho,latrho)
+            lonup,latup = self.nearest_point(lon,lat,lonu,latu)
+            lonvp,latvp = self.nearest_point(lon,lat,lonv,latv)
+            indexu = np.where(self.lon_u==lonup)
+            indexv = np.where(self.lon_v==lonvp)
+            indexr = np.where(self.lon_rho==lonrp)
+            
+            if not self.mask_u[indexu]:
+                print 'No u velocity.'
+                raise Exception()
+            if not self.mask_v[indexv]:
+                print 'No v velocity'
+                raise Exception()
+            if track_way=='backward' : # backwards case
+                waterdepth = self.h[indexr]+self.zeta[-1][indexr][0]
+            else:
+                waterdepth = self.h[indexr]+self.zeta[0][indexr][0]
+            if waterdepth<(abs(depth)): 
+                print 'This point is too shallow.Less than %d meter.'%abs(depth)
+                raise Exception()
+            depth_total = self.s_rho*waterdepth  
+            layer = np.argmin(abs(depth_total+depth))
         except:
             return nodes
         t = abs(self.hours)
         for i in xrange(t):  #Roms points update every 2 hour
             if i!=0 and i%24==0 :
                 #print 'layer,lon,lat,i',layer,lon,lat,i
-                lonl,latl = self.shrink_data(lon,lat,lon_rho,lat_rho)#'''
+                lonrho,latrho = self.shrink_data(lon,lat,self.lon_rho,self.lat_rho)
+                lonu,latu = self.shrink_data(lon,lat,self.lon_u,self.lat_u)
+                lonv,latv = self.shrink_data(lon,lat,self.lon_v,self.lat_v)
             if track_way=='backward': # backwards case
-                u_t = -1*u[(t-1)-i][index[0],index[1]] #[0][0]][index[1][0]]
-                v_t = -1*v[(t-1)-i][index[0],index[1]]
+                u_t = -1*self.u[t-i,layer][indexu][0] 
+                v_t = -1*self.v[t-i,layer][indexv][0]
             else:
-                u_t = u[i][index[0],index[1]] #[index[0]][index[1]]#[0][0]][index[1][0]]
-                v_t = v[i][index[0],index[1]] #[index[0]][index[1]]#[0][0]][index[1][0]]
-            if u_t==0 and v_t==0: #There is no water
-                print 'Sorry, hits the land,u,v==0'
+                u_t = self.u[i,layer][indexu][0] 
+                v_t = self.v[i,layer][indexv][0] 
+            #print 'u_t,v_t',u_t,v_t
+            if np.isnan(u_t) or np.isnan(v_t): #There is no water
+                print 'Sorry, the point on the land or hits the land. Info: u or v is NAN'
                 return nodes
             dx = 60*60*u_t#float(u_p)
             dy = 60*60*v_t#float(v_p)
@@ -449,17 +484,39 @@ class get_roms(track):
             #lon,lat = mapx(x+dx,y+dy,inverse=True)            
             lon = lon + dx/(111111*np.cos(lat*np.pi/180))
             lat = lat + dy/111111
-            print 'lat,lon,i',lat,lon,i
+            print '%d,lat,lon,layer'%(i+1),lat,lon,layer
+            nodes['lon'].append(lon);nodes['lat'].append(lat)
             try:
-                lonp,latp,nearestdistance = self.nearest_point_index(lon,lat,lonl,latl)
-                index1 = np.where(lon_rho==lonp)
-                index2 = np.where(lat_rho==latp)
-                index = np.intersect1d(index1,index2)
-                #print 'distance',nearestdistance
+                lonrp,latrp = self.nearest_point(lon,lat,lonrho,latrho)
+                lonup,latup = self.nearest_point(lon,lat,lonu,latu)
+                lonvp,latvp = self.nearest_point(lon,lat,lonv,latv)
+                indexu = np.where(self.lon_u==lonup) #index2 = np.where(latu==latup)
+                indexv = np.where(self.lon_v==lonvp) #index4 = np.where(latv==latvp)
+                indexr = np.where(self.lon_rho==lonrp) #index6 = np.where(lat_rho==latrp)
+                #indexu = np.intersect1d(index1,index2); #print indexu
+                if not self.mask_u[indexu]:
+                    print 'No u velocity.'
+                    raise Exception()
+                #indexv = np.intersect1d(index3,index4); #print indexv
+                if not self.mask_v[indexv]:
+                    print 'No v velocity'
+                    raise Exception()
+                #indexr = np.intersect1d(index5,index6);
+                
+                if track_way=='backward': # backwards case
+                    waterdepth = self.h[indexr]+self.zeta[(t-i-1)][indexr][0]
+                else:
+                    waterdepth = self.h[indexr]+self.zeta[(i+1)][indexr][0]
+                    
+                if waterdepth<(abs(depth)): 
+                    print 'This point is too shallow.Less than %d meter.'%abs(depth)
+                    raise Exception()
+                depth_total = self.s_rho*waterdepth  
+                layer = np.argmin(abs(depth_total+depth))
             except:
-                #landnum+=1
+                #print 'loop problem.'
                 return nodes
-            nodes['lon'].append(lon);  nodes['lat'].append(lat)
+            
         return nodes
 
         
@@ -467,6 +524,35 @@ class get_fvcom(track):
     def __init__(self, mod):
         self.modelname = mod
             
+    def nearest_point(self, lon, lat, lons, lats, length):  #0.3/5==0.06
+        '''Find the nearest point to (lon,lat) from (lons,lats),
+           return the nearest-point (lon,lat)
+           author: Bingwei'''
+        p = Path.circle((lon,lat),radius=length)
+        #numpy.vstack(tup):Stack arrays in sequence vertically
+        points = np.vstack((lons.flatten(),lats.flatten())).T  
+        
+        insidep = []
+        #collect the points included in Path.
+        for i in xrange(len(points)):
+            if p.contains_point(points[i]):# .contains_point return 0 or 1
+                insidep.append(points[i])  
+        # if insidep is null, there is no point in the path.
+        if not insidep:
+            print 'This point out of the model area or hits the land.'
+            raise Exception()
+        #calculate the distance of every points in insidep to (lon,lat)
+        distancelist = []
+        for i in insidep:
+            ss=math.sqrt((lon-i[0])**2+(lat-i[1])**2)
+            distancelist.append(ss)
+        # find index of the min-distance
+        mindex = np.argmin(distancelist)
+        # location the point
+        lonp = insidep[mindex][0]; latp = insidep[mindex][1]
+        
+        return lonp,latp
+        
     def nearest_point_index(self, lon, lat, lons, lats,rad):  #,num=4
         '''
         Return the nearest point(lonp,latp) and distance to origin point(lon,lat).
@@ -474,14 +560,7 @@ class get_fvcom(track):
         latp, lonp: the coordinate of points to be calculated.
         '''
         def bbox2ij(lon, lat, lons, lats, rad):  
-            """
-            Return tuple of indices of points that are completely covered by the 
-            specific boundary box.
-            i = bbox2ij(lon,lat,bbox)
-            lons,lats = 2D arrays (list) that are the target of the subset, type: np.ndarray
-            bbox = list containing the bounding box: [lon_min, lon_max, lat_min, lat_max]
-            length: the boundary box.
-            """
+            
             '''bbox = [lon-length, lon+length, lat-length, lat+length]
             bbox = np.array(bbox)
             mypath = np.array([bbox[[0,1,1,0]],bbox[[2,2,3,3]]]).T#'''
@@ -546,44 +625,59 @@ class get_fvcom(track):
         self.hours = int(round((endtime-starttime).total_seconds()/60/60))
         #print self.hours
                 
-        if self.modelname is "GOM3":
+        if self.modelname == "GOM3":
+            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?time[0:1:144]'''
             url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?
             lon[0:1:51215],lat[0:1:51215],lonc[0:1:95721],latc[0:1:95721],siglay[0:1:39][0:1:51215],h[0:1:51215],nbe[0:1:2][0:1:95721],
             u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721],zeta[{0}:1:{1}][0:1:51215]'''
-            urll = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?
+            '''urll = http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?
             u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721],zeta[{0}:1:{1}][0:1:51215]'''
-            current_time = pytz.utc.localize(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)) #“current_time” is the beginning of today
-            period = starttime-(current_time-timedelta(days=3))
-            if period.total_seconds()<0:
-                raise IndexError('GOM3 only works between 3days before and 3daysafter.')
-            index1 = int(round(period.total_seconds()/3600))
-            index2 = index1 + self.hours
+            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
+            # get number of hour from 05/18/2013
+            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
+            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
+            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
+                #print 
+                raise Exception('massbay only works between 3days before and 3days after.')
+            tm1 = mtime-t1; #tm2 = mtime-t2
+            index1 = np.argmin(abs(tm1))
+            index2 = index1 + self.hours#'''
             url = url.format(index1, index2)
             
             self.url = url
             
-        elif self.modelname is "massbay":
+        elif self.modelname == "massbay":
+            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?time[0:1:144]'''
             url = """http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?
             lon[0:1:98431],lat[0:1:98431],lonc[0:1:165094],latc[0:1:165094],siglay[0:1:9][0:1:98431],h[0:1:98431],
             nbe[0:1:2][0:1:165094],u[{0}:1:{1}][0:1:9][0:1:165094],v[{0}:1:{1}][0:1:9][0:1:165094],zeta[{0}:1:{1}][0:1:98431]"""
-            urll = """http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?
-            u[{0}:1:{1}][0:1:9][0:1:165094],v[{0}:1:{1}][0:1:9][0:1:165094],zeta[{0}:1:{1}][0:1:98431]"""
-            current_time = pytz.utc.localize(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0))
+            
+            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
+            # get number of hour from 05/18/2013
+            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
+            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
+            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
+                #print 
+                raise Exception('massbay only works between 3days before and 3days after.')
+            tm1 = mtime-t1; #tm2 = mtime-t2
+            index1 = np.argmin(abs(tm1)); #index2 = np.argmin(abs(tm2)); print index1,index2
+            '''current_time = pytz.utc.localize(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0))
             #print 'current_time',current_time
             period = starttime-(current_time-timedelta(days=3))
             if period.total_seconds()<0:
                 raise IndexError('massbay only works between 3days before and 3days after.')
-            index1 = int(round(period.total_seconds()/3600))
-            index2 = index1 + self.hours
+            index1 = int(round(period.total_seconds()/3600)); #print index1'''
+            index2 = index1 + self.hours; #print index2
             url = url.format(index1, index2)#'''6
             
             self.url = url
             
 
-        elif self.modelname is "massbaya":
-            url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/archives/necofs_mb?
+        elif self.modelname == "massbaya":
+            '''url1 = http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/archives/necofs_mb?
             lon[0:1:98431],lat[0:1:98431],lonc[0:1:165094],latc[0:1:165094],siglay[0:1:9][0:1:98431],
             h[0:1:98431],u[{0}:1:{1}][0:1:9][0:1:165094],v[{0}:1:{1}][0:1:9][0:1:165094]'''
+            
             index1 = int((starttime-datetime(2011,1,18,0,0,0,0,pytz.UTC)).total_seconds()/3600)
             index2 = index1 + self.hours
             if index2<index1: #case of backwards run
@@ -591,7 +685,7 @@ class get_fvcom(track):
             else:
                 url = url.format(index1, index2)
             print url
-        elif self.modelname is "GOM3a":
+        elif self.modelname == "GOM3a":
             url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/archives/necofs_gom3v13?
             lon[0:1:51215],lat[0:1:51215],lonc[0:1:95721],latc[0:1:95721],siglay[0:1:39][0:1:51215],
             h[0:1:51215],u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721]'''
@@ -599,7 +693,7 @@ class get_fvcom(track):
             index2 = index1 + self.hours
             url = url.format(index1, index2)
             print url
-        elif self.modelname is "30yr": #start at 1977/12/31 22:58, end at 2014/1/1 0:0, time units:hours
+        elif self.modelname == "30yr": #start at 1977/12/31 22:58, end at 2014/1/1 0:0, time units:hours
             url = """http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?h[0:1:48450],
             lat[0:1:48450],latc[0:1:90414],lon[0:1:48450],lonc[0:1:90414],nbe[0:1:2][0:1:90414],
             siglay[0:1:44][0:1:48450],nv[0:1:2][0:1:90414],u[{0}:1:{1}][0:1:44][0:1:90414],
@@ -615,10 +709,12 @@ class get_fvcom(track):
         '''
         "get_data" not only returns boundary points but defines global attributes to the object
         '''
-        self.data = get_nc_data(url,'lat','lon','latc','lonc','siglay','h','nbe')#,'nv'
+        self.data = get_nc_data(url,'lat','lon','latc','lonc','siglay','h','nbe','u','v','zeta')#,'nv'
         self.lonc, self.latc = self.data['lonc'][:], self.data['latc'][:]  #quantity:165095
         self.lons, self.lats = self.data['lon'][:], self.data['lat'][:]
         self.h = self.data['h'][:]; self.siglay = self.data['siglay'][:]; #nv = self.data['nv'][:]
+        self.u = self.data['u']; self.v = self.data['v']; self.zeta = self.data['zeta']
+        
         nbe1=self.data['nbe'][0];nbe2=self.data['nbe'][1];
         nbe3=self.data['nbe'][2]
         pointt = np.vstack((nbe1,nbe2,nbe3)).T
@@ -727,8 +823,8 @@ class get_fvcom(track):
     def streamlinedata(self,nodes,depth,track_way):
         
         lonpps,latpps,US,VS,speeds = [],[],[],[],[]
-        uvz = netCDF4.Dataset(self.url)
-        u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
+        #uvz = netCDF4.Dataset(self.url)
+        #u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
         
         lonmax = max(nodes['lons']); lonmin = min(nodes['lons'])
         latmax = max(nodes['lats']); latmin = min(nodes['lats'])
@@ -749,11 +845,11 @@ class get_fvcom(track):
             for j in xrange(len(latss)):
                 try:
                     if self.modelname == "GOM3" or self.modelname == "30yr":
-                        lonpp,latpp,dex = self.nearest_point_index(lonss[j],latss[j],lonll,latll,0.2)
-                        lonn,latn,ds = self.nearest_point_index(lonss[j],latss[j],lonk,latk,0.3)
+                        lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.2)
+                        lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.3)
                     if self.modelname == "massbay":
-                        lonpp,latpp,dex = self.nearest_point_index(lonss[j],latss[j],lonll,latll,0.03)
-                        lonn,latn,ds = self.nearest_point_index(lonss[j],latss[j],lonk,latk,0.05)
+                        lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.03)
+                        lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.05)
                     
                     index11 = np.where(self.lonc==lonpp)
                     index22 = np.where(self.latc==latpp)
@@ -762,9 +858,9 @@ class get_fvcom(track):
                     index4 = np.where(self.lats==latn)
                     nodeindex = np.intersect1d(index3,index4)
                     if track_way=='backward' : # backwards case
-                        waterdepth = self.h[nodeindex]+zeta[t-i-1,nodeindex]
+                        waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
                     else:
-                        waterdepth = self.h[nodeindex]+zeta[i,nodeindex]
+                        waterdepth = self.h[nodeindex]+self.zeta[i,nodeindex]
                     if waterdepth<(abs(depth)): 
                         print 'This point is too shallow as less than %d meters.'%abs(depth)
                         raise Exception()
@@ -772,9 +868,9 @@ class get_fvcom(track):
                     layer = np.argmin(abs(depth_total-depth))                    
                     
                     if track_way=='backward' : # backwards case
-                        us.append(u[t-1-i,layer,index00][0]); vs.append(v[t-1-i,layer,index00][0])
+                        us.append(self.u[t-1-i,layer,index00][0]); vs.append(self.v[t-1-i,layer,index00][0])
                     else:
-                        us.append(u[i,layer,index00][0]); vs.append(v[i,layer,index00][0])
+                        us.append(self.u[i,layer,index00][0]); vs.append(self.v[i,layer,index00][0])
                     
                 except:
                     #print 'out of area'
@@ -816,8 +912,8 @@ class get_fvcom(track):
         Get forecast points start at lon,lat
         '''
         modpts = dict(lon=[], lat=[], layer=[]) #model forecast points
-        uvz = netCDF4.Dataset(self.url)
-        u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
+        #uvz = netCDF4.Dataset(self.url)
+        #u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
         #print 'len u',len(u)
         if lon>90:
             lon, lat = dm2dd(lon, lat)
@@ -825,11 +921,11 @@ class get_fvcom(track):
         lonk,latk = self.shrink_data(lon,lat,self.lons,self.lats,0.5)
         try:
             if self.modelname == "GOM3" or self.modelname == "30yr":
-                lonp,latp,distance = self.nearest_point_index(lon, lat, lonl, latl,0.2)
-                lonn,latn,ds = self.nearest_point_index(lon,lat,lonk,latk,0.3)
+                lonp,latp = self.nearest_point(lon, lat, lonl, latl,0.2)
+                lonn,latn = self.nearest_point(lon,lat,lonk,latk,0.3)
             if self.modelname == "massbay":
-                lonp,latp,distance = self.nearest_point_index(lon, lat, lonl, latl,0.03)
-                lonn,latn,ds = self.nearest_point_index(lon,lat,lonk,latk,0.05)        
+                lonp,latp = self.nearest_point(lon, lat, lonl, latl,0.03)
+                lonn,latn = self.nearest_point(lon,lat,lonk,latk,0.05)        
             index1 = np.where(self.lonc==lonp)
             index2 = np.where(self.latc==latp)
             elementindex = np.intersect1d(index1,index2)
@@ -862,14 +958,14 @@ class get_fvcom(track):
                         raise Exception()#'''
             
             if track_way=='backward' : # backwards case
-                waterdepth = self.h[nodeindex]+zeta[-1,nodeindex]
+                waterdepth = self.h[nodeindex]+self.zeta[-1,nodeindex]
             else:
-                waterdepth = self.h[nodeindex]+zeta[0,nodeindex]
+                waterdepth = self.h[nodeindex]+self.zeta[0,nodeindex]
             if waterdepth<(abs(depth)): 
                 print 'This point is too shallow.Less than %d meter.'%abs(depth)
                 raise Exception()
             depth_total = self.siglay[:,nodeindex]*waterdepth  
-            layer = np.argmin(abs(depth_total-depth))
+            layer = np.argmin(abs(depth_total+depth))
             modpts['lon'].append(lon); modpts['lat'].append(lat); modpts['layer'].append(layer)
         except:
             return modpts,0  
@@ -881,11 +977,11 @@ class get_fvcom(track):
                 lonl,latl = self.shrink_data(lon,lat,self.lonc,self.latc,0.5)
                 lonk,latk = self.shrink_data(lon,lat,self.lons,self.lats,0.5)
             if track_way=='backward' : # backwards case
-                u_t1 = u[t-i,layer,elementindex][0]*(-1); v_t1 = v[t-i,layer,elementindex][0]*(-1)
-                u_t2 = u[t-i-1,layer,elementindex][0]*(-1); v_t2 = v[t-i-1,layer,elementindex][0]*(-1)
+                u_t1 = self.u[t-i,layer,elementindex][0]*(-1); v_t1 = self.v[t-i,layer,elementindex][0]*(-1)
+                u_t2 = self.u[t-i-1,layer,elementindex][0]*(-1); v_t2 = self.v[t-i-1,layer,elementindex][0]*(-1)
             else:
-                u_t1 = u[i,layer,elementindex][0]; v_t1 = v[i,layer,elementindex][0]
-                u_t2 = u[i+1,layer,elementindex][0]; v_t2 = v[i+1,layer,elementindex][0]
+                u_t1 = self.u[i,layer,elementindex][0]; v_t1 = self.v[i,layer,elementindex][0]
+                u_t2 = self.u[i+1,layer,elementindex][0]; v_t2 = self.v[i+1,layer,elementindex][0]
             u_t,v_t = self.uvt(u_t1,v_t1,u_t2,v_t2)
             #u_t = (u_t1+u_t2)/2; v_t = (v_t1+v_t2)/2
             '''if u_t==0 and v_t==0: #There is no water
@@ -899,7 +995,8 @@ class get_fvcom(track):
             temlon = lon + (dx/(111111*np.cos(lat*np.pi/180)))
             temlat = lat + dy/111111 #'''
             modpts['lon'].append(temlon); modpts['lat'].append(temlat); 
-            print 'layer,lat,lon,i',layer,temlat,temlon,i
+            
+            print '%d,lat,lon,layer'%(i+1),temlat,temlon,layer
             #########case for boundary 1 #############
             if pa:
                 teml = [(lon,lat),(temlon,temlat)]
@@ -918,11 +1015,11 @@ class get_fvcom(track):
             #if i!=(t-1):                
             try:
                 if self.modelname == "GOM3" or self.modelname == "30yr":
-                    lonp,latp,distance = self.nearest_point_index(lon, lat, lonl, latl,0.2)
-                    lonn,latn,ds = self.nearest_point_index(lon,lat,lonk,latk,0.3)
+                    lonp,latp = self.nearest_point(lon, lat, lonl, latl,0.2)
+                    lonn,latn = self.nearest_point(lon,lat,lonk,latk,0.3)
                 if self.modelname == "massbay":
-                    lonp,latp,distance = self.nearest_point_index(lon, lat, lonl, latl,0.03)
-                    lonn,latn,ds = self.nearest_point_index(lon,lat,lonk,latk,0.05)
+                    lonp,latp = self.nearest_point(lon, lat, lonl, latl,0.03)
+                    lonn,latn = self.nearest_point(lon,lat,lonk,latk,0.05)
                 index1 = np.where(self.lonc==lonp)
                 index2 = np.where(self.latc==latp)
                 elementindex = np.intersect1d(index1,index2);#print 'elementindex',elementindex
@@ -957,15 +1054,15 @@ class get_fvcom(track):
                             raise Exception()#'''                   
                 #waterdepth = self.h[nodeindex]+zeta[i+1,nodeindex]
                 if track_way=='backward' : # backwards case
-                    waterdepth = self.h[nodeindex]+zeta[t-i-1,nodeindex]
+                    waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
                 else:
-                    waterdepth = self.h[nodeindex]+zeta[i+1,nodeindex]
+                    waterdepth = self.h[nodeindex]+self.zeta[i+1,nodeindex]
                 #print 'waterdepth',h[nodeindex],zeta[i+1,nodeindex],waterdepth
                 if waterdepth<(abs(depth)): 
                     print 'This point hits the land here.Less than %d meter.'%abs(depth)
                     raise Exception()
                 depth_total = self.siglay[:,nodeindex]*waterdepth  
-                layer = np.argmin(abs(depth_total-depth)) 
+                layer = np.argmin(abs(depth_total+depth)) 
                 modpts['layer'].append(layer)
             except:
                 return modpts,1
