@@ -352,7 +352,7 @@ class get_roms(track):
                 insidep.append(points[i])  
         # if insidep is null, there is no point in the path.
         if not insidep:
-            print 'This point out of the model area or hits the land.'
+            print 'There is no model-point near the given-point.'
             raise Exception()
         #calculate the distance of every points in insidep to (lon,lat)
         distancelist = []
@@ -539,7 +539,7 @@ class get_fvcom(track):
                 insidep.append(points[i])  
         # if insidep is null, there is no point in the path.
         if not insidep:
-            print 'This point out of the model area or hits the land.'
+            print 'There is no model-point near the given-point.'
             raise Exception()
         #calculate the distance of every points in insidep to (lon,lat)
         distancelist = []
@@ -693,12 +693,20 @@ class get_fvcom(track):
             index2 = index1 + self.hours
             url = url.format(index1, index2)
             print url
-        elif self.modelname == "30yr": #start at 1977/12/31 22:58, end at 2014/1/1 0:0, time units:hours
-            url = """http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?h[0:1:48450],
-            lat[0:1:48450],latc[0:1:90414],lon[0:1:48450],lonc[0:1:90414],nbe[0:1:2][0:1:90414],
-            siglay[0:1:44][0:1:48450],nv[0:1:2][0:1:90414],u[{0}:1:{1}][0:1:44][0:1:90414],
-            v[{0}:1:{1}][0:1:44][0:1:90414],zeta[{0}:1:{1}][0:1:48450]"""
-            index1 = int(round((starttime-datetime(1977,12,31,22,58,4,0,pytz.UTC)).total_seconds()/3600))
+        elif self.modelname == "30yr": #start at 1977/12/31 23:00, end at 2014/1/1 0:0, time units:hours
+            timeurl = """http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?time[0:1:316008]"""
+            url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?h[0:1:48450],
+            lat[0:1:48450],latc[0:1:90414],lon[0:1:48450],lonc[0:1:90414],nbe[0:1:2][0:1:90414],siglay[0:1:44][0:1:48450],
+            u[{0}:1:{1}][0:1:44][0:1:90414],v[{0}:1:{1}][0:1:44][0:1:90414],zeta[{0}:1:{1}][0:1:48450]'''
+            #index1 = int(round((starttime-datetime(1977,12,31,22,58,4,0,pytz.UTC)).total_seconds()/3600))
+            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
+            # get number of hour from 05/18/2013
+            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
+            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
+            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
+                raise Exception('massbay works from 1977/12/31 23:00 to 2014/1/1 0:0.')
+            tm1 = mtime-t1; #tm2 = mtime-t2
+            index1 = np.argmin(abs(tm1)); #index2 = np.argmin(abs(tm2)); print index1,index2
             index2 = index1 + self.hours
             url = url.format(index1, index2)
             self.url = url
