@@ -6,7 +6,7 @@ from datetime import datetime,timedelta
 import numpy as np
 import pandas as pd
 from dateutil.parser import parse
-import pytz
+#import pytz
 from matplotlib.path import Path
 import math
 from mpl_toolkits.basemap import Basemap
@@ -66,20 +66,20 @@ def dm2dd(lat,lon):
         lon_value=cc+(dd/60.)
     return lat_value, -lon_value
 def getrawdrift(did,filename):
-   '''
-   routine to get raw drifter data from ascii files posted on the web
-   '''
-   url='http://nefsc.noaa.gov/drifter/'+filename
-   df=pd.read_csv(url,header=None, delimiter=r"\s+")
-   # make a datetime
-   dtime=[]
-   index = np.where(df[0]==int(did))[0]
-   newData = df.ix[index]
-   for k in newData[0].index:
-      #dt1=dt.datetime(int(filename[-10:-6]),df[2][k],df[3][k],df[4][k],df[5][k],0,0,pytz.utc)
-      dt1=datetime(2015, newData[2][k],newData[3][k],newData[4][k],newData[5][k],0,0,pytz.utc)
-      dtime.append(dt1)
-   return newData[8],newData[7],dtime,newData[9]
+    '''
+    routine to get raw drifter data from ascii files posted on the web
+    '''
+    url='http://nefsc.noaa.gov/drifter/'+filename
+    df=pd.read_csv(url,header=None, delimiter="\s+")
+    # make a datetime
+    dtime=[]
+    index = np.where(df[0]==int(did))[0]
+    newData = df.ix[index]
+    for k in newData[0].index:
+        dt1=datetime(2015, newData[2][k],newData[3][k],newData[4][k],newData[5][k])
+        dtime.append(dt1)
+    #print dtime
+    return newData[8],newData[7],dtime,newData[9] # lat,lon,time,
 
 def getdrift(did):
     """
@@ -95,6 +95,7 @@ def getdrift(did):
     """
     url = 'http://comet.nefsc.noaa.gov:8080/erddap/tabledap/drifters.csv?time,latitude,longitude,depth&id="'+did+'"&orderBy("time")'
     df=pd.read_csv(url,skiprows=[1]) #returns a dataframe with all that requested
+    #print df    
     # generate this datetime 
     for k in range(len(df)):
        df.time[k]=parse(df.time[k]) # note this "parse" routine magically converts ERDDAP time to Python datetime
@@ -378,15 +379,24 @@ class get_roms(track):
         h[0:1:81][0:1:129],mask_rho[0:1:81][0:1:128],mask_u[0:1:81][0:1:128],mask_v[0:1:80][0:1:129],zeta[{0}:1:{1}][0:1:81][0:1:129],u[{0}:1:{1}][0:1:35][0:1:81][0:1:128],
         v[{0}:1:{1}][0:1:35][0:1:80][0:1:129],s_rho[0:1:35],lon_rho[0:1:81][0:1:129],lat_rho[0:1:81][0:1:129],lon_u[0:1:81][0:1:128],lat_u[0:1:81][0:1:128],
         lon_v[0:1:80][0:1:129],lat_v[0:1:80][0:1:129],time[0:1:19523]"""
-        oceantime = netCDF4.Dataset(url_oceantime).variables['time'][:]
+        try:
+            oceantime = netCDF4.Dataset(url_oceantime).variables['time'][:]
+        except:
+            print 'ROMS database is unavailable!'
+            raise Exception()
+        # get model works time horizon(UTC).
+        fmodtime = datetime(2013,05,18) + timedelta(hours=float(oceantime[0]))
+        emodtime = datetime(2013,05,18) + timedelta(hours=float(oceantime[-1]))
+        mstt = fmodtime.strftime('%m/%d/%Y %H:%M') #model start time
+        mett = emodtime.strftime('%m/%d/%Y %H:%M') #model end time
         # get number of hour from 05/18/2013
-        t1 = (starttime - datetime(2013,05,18, tzinfo=pytz.UTC)).total_seconds()/3600 
-        t2 = (endtime - datetime(2013,05,18, tzinfo=pytz.UTC)).total_seconds()/3600
+        t1 = (starttime - datetime(2013,05,18)).total_seconds()/3600 
+        t2 = (endtime - datetime(2013,05,18)).total_seconds()/3600
         t1 = int(round(t1)); t2 = int(round(t2))
         # judge if the starttime and endtime in the model time horizon
         if not t1 in oceantime or not t2 in oceantime:
-            print 'Specific tracking time out of model time horizon.'
-            raise Exception
+            print 'Time: Error! Model(ROMS) only works between %s with %s.'%(mstt,mett)
+            raise Exception()
         index1 = np.where(oceantime==t1)[0][0]; #print index1
         index2 = np.where(oceantime==t2)[0][0]; #print index2
 
@@ -421,7 +431,7 @@ class get_roms(track):
         self.h = data['h'][:]; self.s_rho = data['s_rho'][:]
         self.mask_u = data['mask_u'][:]; self.mask_v = data['mask_v'][:]#; mask_rho = data['mask_rho'][:]
         self.u = data['u']; self.v = data['v']; self.zeta = data['zeta']
-        #return data
+        #return self.fmodtime, self.emodtime
         
     def get_track(self,lon,lat,depth,track_way):#, depth
         '''
@@ -626,89 +636,93 @@ class get_fvcom(track):
         #print self.hours
                 
         if self.modelname == "GOM3":
-            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?time[0:1:144]'''
+            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?Times[0:1:144]'''
             url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?
             lon[0:1:51215],lat[0:1:51215],lonc[0:1:95721],latc[0:1:95721],siglay[0:1:39][0:1:51215],h[0:1:51215],nbe[0:1:2][0:1:95721],
             u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721],zeta[{0}:1:{1}][0:1:51215]'''
             '''urll = http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc?
             u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721],zeta[{0}:1:{1}][0:1:51215]'''
-            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
-            # get number of hour from 05/18/2013
-            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
-            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
-            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
-                #print 
-                raise Exception('massbay only works between 3days before and 3days after.')
-            tm1 = mtime-t1; #tm2 = mtime-t2
+            try:
+                mTime = netCDF4.Dataset(timeurl).variables['Times'][:]              
+            except:
+                print '"GOM3" database is unavailable!'
+                raise Exception()
+            Times = []
+            for i in mTime:
+                strt = '201'+i[3]+'-'+i[5]+i[6]+'-'+i[8]+i[9]+' '+i[11]+i[12]+':'+i[14]+i[15]
+                Times.append(datetime.strptime(strt,'%Y-%m-%d %H:%M'))
+            fmodtime = Times[0]; emodtime = Times[-1]         
+            if starttime<fmodtime or starttime>emodtime or endtime<fmodtime or endtime>emodtime:
+                print 'Time: Error! Model(GOM3) only works between %s with %s(UTC).'%(fmodtime,emodtime)
+                raise Exception()
+            npTimes = np.array(Times)
+            tm1 = npTimes-starttime; #tm2 = mtime-t2
             index1 = np.argmin(abs(tm1))
             index2 = index1 + self.hours#'''
             url = url.format(index1, index2)
+            self.mTime = Times[index1:index2+1]
             
             self.url = url
             
         elif self.modelname == "massbay":
-            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?time[0:1:144]'''
+            timeurl = '''http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?Times[0:1:144]'''
             url = """http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_FVCOM_OCEAN_MASSBAY_FORECAST.nc?
             lon[0:1:98431],lat[0:1:98431],lonc[0:1:165094],latc[0:1:165094],siglay[0:1:9][0:1:98431],h[0:1:98431],
             nbe[0:1:2][0:1:165094],u[{0}:1:{1}][0:1:9][0:1:165094],v[{0}:1:{1}][0:1:9][0:1:165094],zeta[{0}:1:{1}][0:1:98431]"""
             
-            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
-            # get number of hour from 05/18/2013
-            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
-            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
-            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
-                #print 
-                raise Exception('massbay only works between 3days before and 3days after.')
-            tm1 = mtime-t1; #tm2 = mtime-t2
-            index1 = np.argmin(abs(tm1)); #index2 = np.argmin(abs(tm2)); print index1,index2
-            '''current_time = pytz.utc.localize(datetime.now().replace(hour=0,minute=0,second=0,microsecond=0))
-            #print 'current_time',current_time
-            period = starttime-(current_time-timedelta(days=3))
-            if period.total_seconds()<0:
-                raise IndexError('massbay only works between 3days before and 3days after.')
-            index1 = int(round(period.total_seconds()/3600)); #print index1'''
-            index2 = index1 + self.hours; #print index2
-            url = url.format(index1, index2)#'''6
+            try:
+                mTime = netCDF4.Dataset(timeurl).variables['Times'][:]              
+            except:
+                print '"massbay" database is unavailable!'
+                raise Exception()
+            Times = []
+            for i in mTime:
+                strt = '201'+i[3]+'-'+i[5]+i[6]+'-'+i[8]+i[9]+' '+i[11]+i[12]+':'+i[14]+i[15]
+                Times.append(datetime.strptime(strt,'%Y-%m-%d %H:%M'))
+            fmodtime = Times[0]; emodtime = Times[-1]         
+            if starttime<fmodtime or starttime>emodtime or endtime<fmodtime or endtime>emodtime:
+                print 'Time: Error! Model(massbay) only works between %s with %s(UTC).'%(fmodtime,emodtime)
+                raise Exception()
+            npTimes = np.array(Times)
+            tm1 = npTimes-starttime; #tm2 = mtime-t2
+            index1 = np.argmin(abs(tm1))
+            index2 = index1 + self.hours#'''
+            url = url.format(index1, index2)
+            self.mTime = Times[index1:index2+1]
             
             self.url = url
-            
 
-        elif self.modelname == "massbaya":
-            '''url1 = http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/archives/necofs_mb?
-            lon[0:1:98431],lat[0:1:98431],lonc[0:1:165094],latc[0:1:165094],siglay[0:1:9][0:1:98431],
-            h[0:1:98431],u[{0}:1:{1}][0:1:9][0:1:165094],v[{0}:1:{1}][0:1:9][0:1:165094]'''
-            
-            index1 = int((starttime-datetime(2011,1,18,0,0,0,0,pytz.UTC)).total_seconds()/3600)
-            index2 = index1 + self.hours
-            if index2<index1: #case of backwards run
-                url = url.format(index2, index1)
-            else:
-                url = url.format(index1, index2)
-            print url
-        elif self.modelname == "GOM3a":
-            url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/archives/necofs_gom3v13?
-            lon[0:1:51215],lat[0:1:51215],lonc[0:1:95721],latc[0:1:95721],siglay[0:1:39][0:1:51215],
-            h[0:1:51215],u[{0}:1:{1}][0:1:39][0:1:95721],v[{0}:1:{1}][0:1:39][0:1:95721]'''
-            index1 = int((starttime-datetime(2013,5,9,0,0,0,0,pytz.UTC)).total_seconds()/3600)
-            index2 = index1 + self.hours
-            url = url.format(index1, index2)
-            print url
         elif self.modelname == "30yr": #start at 1977/12/31 23:00, end at 2014/1/1 0:0, time units:hours
             timeurl = """http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?time[0:1:316008]"""
             url = '''http://www.smast.umassd.edu:8080/thredds/dodsC/fvcom/hindcasts/30yr_gom3?h[0:1:48450],
             lat[0:1:48450],latc[0:1:90414],lon[0:1:48450],lonc[0:1:90414],nbe[0:1:2][0:1:90414],siglay[0:1:44][0:1:48450],
             u[{0}:1:{1}][0:1:44][0:1:90414],v[{0}:1:{1}][0:1:44][0:1:90414],zeta[{0}:1:{1}][0:1:48450]'''
-            #index1 = int(round((starttime-datetime(1977,12,31,22,58,4,0,pytz.UTC)).total_seconds()/3600))
-            mtime = netCDF4.Dataset(timeurl).variables['time'][:]
-            # get number of hour from 05/18/2013
-            t1 = (starttime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400 
-            t2 = (endtime - datetime(1858,11,17, tzinfo=pytz.UTC)).total_seconds()/86400
-            if not min(mtime)<t1<max(mtime) or not min(mtime)<t2<max(mtime):
-                raise Exception('massbay works from 1977/12/31 23:00 to 2014/1/1 0:0.')
+            
+            try:
+                mtime = netCDF4.Dataset(timeurl).variables['time'][:]
+            except:
+                print '"30yr" database is unavailable!'
+                raise Exception
+            # get model's time horizon(UTC).
+            fmodtime = datetime(1858,11,17) + timedelta(float(mtime[0]))
+            emodtime = datetime(1858,11,17) + timedelta(float(mtime[-1]))
+            mstt = fmodtime.strftime('%m/%d/%Y %H:%M')
+            mett = emodtime.strftime('%m/%d/%Y %H:%M')
+            # get number of days from 11/17/1858
+            t1 = (starttime - datetime(1858,11,17)).total_seconds()/86400 
+            t2 = (endtime - datetime(1858,11,17)).total_seconds()/86400
+            if not mtime[0]<t1<mtime[-1] or not mtime[0]<t2<mtime[-1]:
+                print 'Time: Error! Model(massbay) only works between %s with %s(UTC).'%(mstt,mett)
+                raise Exception()
+            
             tm1 = mtime-t1; #tm2 = mtime-t2
             index1 = np.argmin(abs(tm1)); #index2 = np.argmin(abs(tm2)); print index1,index2
             index2 = index1 + self.hours
             url = url.format(index1, index2)
+            Times = []
+            for i in range(self.hours+1):
+                Times.append(starttime+timedelta(i))
+            self.mTime = Times
             self.url = url
         #print url
         return url
@@ -725,13 +739,14 @@ class get_fvcom(track):
         
         nbe1=self.data['nbe'][0];nbe2=self.data['nbe'][1];
         nbe3=self.data['nbe'][2]
-        pointt = np.vstack((nbe1,nbe2,nbe3)).T
+        pointt = np.vstack((nbe1,nbe2,nbe3)).T; self.pointt = pointt
         wl=[]
         for i in pointt:
             if 0 in i: 
                 wl.append(1)
             else:
                 wl.append(0)
+        self.wl = wl
         tf = np.array(wl)
         inde = np.where(tf==True)
         #b_index = inde[0]
@@ -790,7 +805,12 @@ class get_fvcom(track):
             path = Path(pa)#,codes
             return path
         
-    def eline_path(self,lon,lat):
+    def eline_path_old(self,lon,lat):
+        '''
+        When drifter close to boundary(less than 0.1),find one nearest point to drifter from boundary points, 
+        then find two nearest boundary points to previous boundary point, create a boundary path using that 
+        three boundary points.
+        '''
         p = Path.circle((lon,lat),radius=0.1) #0.06
         dis = []; bps = []
         for i in self.b_points:
@@ -802,7 +822,7 @@ class get_fvcom(track):
             return None
         dnp = np.array(dis)
         dis.sort()
-        if dis[0]>0.04 :
+        if dis[0]>0.05 :
             return None
         
         else :
@@ -828,6 +848,122 @@ class get_fvcom(track):
             path = Path(pa)#,codes
             return path
     
+    def eline_path2(self,lon,lat):
+        '''
+        When drifter close to boundary(less than 0.1),find one nearest point to drifter from boundary points, 
+        then find two nearest boundary points to previous boundary point, create a boundary path using that 
+        three boundary points.
+        '''
+        p = Path.circle((lon,lat),radius=0.02) #0.06
+        dis = []; bps = []; pa = []
+        tlons = []; tlats = []; loca = []
+        for i in self.b_points:
+            if p.contains_point(i):
+                bps.append((i[0],i[1]))
+                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
+                dis.append(d)
+        bps = np.array(bps)
+        if not dis:
+            return None
+        else:
+            print "Close to boundary."
+            dnp = np.array(dis)
+            dmin = np.argmin(dnp)
+            lonp = bps[dmin][0]; latp = bps[dmin][1]
+            index1 = np.where(self.lonc==lonp)
+            index2 = np.where(self.latc==latp)
+            elementindex = np.intersect1d(index1,index2) # location 753'''
+            print index1,index2,elementindex  
+            dx = self.pointt[elementindex]; #print dx 
+            for i in dx[0]: # i is a number.
+                #print i  
+                if i ==0 :
+                    continue
+                dx1 = self.pointt[i-1]; #print dx1
+                if 0 in dx1:
+                    loca.append(i-1)
+                else:
+                    for j in dx1:
+                        if j != elementindex[0]+1:
+                            if self.wl[j-1] == 1:
+                                loca.append(j-1)
+                            
+            for i in loca:
+                tlons.append(self.lonc[i]); tlats.append(self.latc[i])
+            tlons.insert(1,lonp); tlats.insert(1,latp)            
+            for i in xrange(len(tlons)):
+                pa.append((tlons[i],tlats[i]))
+            path = Path(pa)#,codes
+            return path
+    
+    def eline_path(self,lon,lat):
+        '''
+        When drifter close to boundary(less than 0.1),find one nearest point to drifter from boundary points, 
+        then find two nearest boundary points to previous boundary point, create a boundary path using that 
+        three boundary points.
+        '''
+        def boundary_location(locindex,pointt,wl):
+            '''
+            Return the index of boundary points nearest to 'locindex'.
+            '''
+            loca = []
+            dx = pointt[locindex]; #print 'func',dx 
+            for i in dx: # i is a number.
+                #print i  
+                if i ==0 :
+                    continue
+                dx1 = pointt[i-1]; #print dx1
+                if 0 in dx1:
+                    loca.append(i-1)
+                else:
+                    for j in dx1:
+                        if j != locindex+1:
+                            if wl[j-1] == 1:
+                                loca.append(j-1)
+            return loca
+        
+        p = Path.circle((lon,lat),radius=0.02) #0.06
+        dis = []; bps = []; pa = []
+        tlons = []; tlats = []; loca = []
+        for i in self.b_points:
+            if p.contains_point(i):
+                bps.append((i[0],i[1]))
+                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
+                dis.append(d)
+        bps = np.array(bps)
+        if not dis:
+            return None
+        else:
+            print "Close to boundary."
+            dnp = np.array(dis)
+            dmin = np.argmin(dnp)
+            lonp = bps[dmin][0]; latp = bps[dmin][1]
+            index1 = np.where(self.lonc==lonp)
+            index2 = np.where(self.latc==latp)
+            elementindex = np.intersect1d(index1,index2)[0] # location 753'''
+            #print index1,index2,elementindex  
+            loc1 = boundary_location(elementindex,self.pointt,self.wl) ; #print 'loc1',loc1
+            loca.extend(loc1)
+            loca.insert(1,elementindex)               
+            for i in range(len(loc1)):
+                loc2 = boundary_location(loc1[i],self.pointt,self.wl); #print 'loc2',loc2
+                if len(loc2)==1:
+                    continue
+                for j in loc2:
+                    if j != elementindex:
+                        if i ==0:
+                            loca.insert(0,j)
+                        else:
+                            loca.append(j)
+            
+            for i in loca:
+                tlons.append(self.lonc[i]); tlats.append(self.latc[i])
+                       
+            for i in xrange(len(tlons)):
+                pa.append((tlons[i],tlats[i]))
+            path = Path(pa)#,codes
+            return path
+            
     def streamlinedata(self,nodes,depth,track_way):
         
         lonpps,latpps,US,VS,speeds = [],[],[],[],[]
@@ -841,7 +977,7 @@ class get_fvcom(track):
         mlon = lon1+radius; ilon = lon1-radius
         mlat = lat1+radius; ilat = lat1-radius
         
-        latps, lonps = np.mgrid[ilat:mlat:20j, ilon:mlon:20j]#x = np.linspace(-3,3,100)       
+        latps, lonps = np.mgrid[ilat:mlat:10j, ilon:mlon:10j]#x = np.linspace(-3,3,100)       
         latss = latps.flatten();lonss = lonps.flatten()
         
         lonll,latll = self.shrink_data(lon1,lat1,self.lonc,self.latc,radius*1.5)
@@ -919,7 +1055,7 @@ class get_fvcom(track):
         '''
         Get forecast points start at lon,lat
         '''
-        modpts = dict(lon=[], lat=[], layer=[]) #model forecast points
+        modpts = dict(lon=[lon], lat=[lat], layer=[], time=[]) #model forecast points
         #uvz = netCDF4.Dataset(self.url)
         #u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
         #print 'len u',len(u)
@@ -967,14 +1103,16 @@ class get_fvcom(track):
             
             if track_way=='backward' : # backwards case
                 waterdepth = self.h[nodeindex]+self.zeta[-1,nodeindex]
+                modpts['time'].append(self.mTime[-1])
             else:
                 waterdepth = self.h[nodeindex]+self.zeta[0,nodeindex]
+                modpts['time'].append(self.mTime[0])
+            depth_total = self.siglay[:,nodeindex]*waterdepth  
+            layer = np.argmin(abs(depth_total+depth))
+            modpts['layer'].append(layer); 
             if waterdepth<(abs(depth)): 
                 print 'This point is too shallow.Less than %d meter.'%abs(depth)
                 raise Exception()
-            depth_total = self.siglay[:,nodeindex]*waterdepth  
-            layer = np.argmin(abs(depth_total+depth))
-            modpts['lon'].append(lon); modpts['lat'].append(lat); modpts['layer'].append(layer)
         except:
             return modpts,0  
             
@@ -1002,9 +1140,6 @@ class get_fvcom(track):
             #temlon,temlat = mapx(x+dx,y+dy,inverse=True)            
             temlon = lon + (dx/(111111*np.cos(lat*np.pi/180)))
             temlat = lat + dy/111111 #'''
-            modpts['lon'].append(temlon); modpts['lat'].append(temlat); 
-            
-            print '%d,lat,lon,layer'%(i+1),temlat,temlon,layer
             #########case for boundary 1 #############
             if pa:
                 teml = [(lon,lat),(temlon,temlat)]
@@ -1030,7 +1165,7 @@ class get_fvcom(track):
                     lonn,latn = self.nearest_point(lon,lat,lonk,latk,0.05)
                 index1 = np.where(self.lonc==lonp)
                 index2 = np.where(self.latc==latp)
-                elementindex = np.intersect1d(index1,index2);#print 'elementindex',elementindex
+                elementindex = np.intersect1d(index1,index2); #print 'elementindex',elementindex
                 index3 = np.where(self.lons==lonn)
                 index4 = np.where(self.lats==latn)
                 nodeindex = np.intersect1d(index3,index4)
@@ -1063,15 +1198,18 @@ class get_fvcom(track):
                 #waterdepth = self.h[nodeindex]+zeta[i+1,nodeindex]
                 if track_way=='backward' : # backwards case
                     waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
+                    modpts['time'].append(self.mTime[t-i-1])
                 else:
                     waterdepth = self.h[nodeindex]+self.zeta[i+1,nodeindex]
-                #print 'waterdepth',h[nodeindex],zeta[i+1,nodeindex],waterdepth
+                    modpts['time'].append(self.mTime[i+1])
+                
+                depth_total = self.siglay[:,nodeindex]*waterdepth  
+                layer = np.argmin(abs(depth_total+depth)) 
+                modpts['lon'].append(lon); modpts['lat'].append(lat); modpts['layer'].append(layer); 
+                print '%d,lat,lon,layer'%(i+1),temlat,temlon,layer
                 if waterdepth<(abs(depth)): 
                     print 'This point hits the land here.Less than %d meter.'%abs(depth)
                     raise Exception()
-                depth_total = self.siglay[:,nodeindex]*waterdepth  
-                layer = np.argmin(abs(depth_total+depth)) 
-                modpts['layer'].append(layer)
             except:
                 return modpts,1
                                 
@@ -1295,6 +1433,7 @@ def draw_basemap(ax, points, interval_lon=0.3, interval_lat=0.3):
     dmap.drawcoastlines()
     dmap.fillcontinents(color='grey')
     dmap.drawmapboundary()
+    dmap.etopo()
 
 def uniquecolors(N):
     """
@@ -1406,6 +1545,22 @@ def extend_square(point, radius,num):
         bbox = np.array(bbox)
         points = np.array([bbox[[1,2,2,1,1,2,0,0]],bbox[[4,4,5,5,3,3,4,5]]])
         lats.extend(points[1]); lons.extend(points[0])
+
+    return lats,lons
+    
+def extend_units(point, unit, num):
+    '''point = (lat,lon); length: units is decimal degrees.
+       return a squre points(lats,lons) on center point'''
+    (lat,lon) = point; 
+    lats=[]; lons=[]
+    #unit = unit
+    leh = unit*num
+    
+    #ps = np.mgrid[lat-leh:lat+leh+1:2j, lon-leh:lon+leh+1:2j]; print ps
+    #ps = ps*unit
+    lts = np.arange(lat-leh,lat+leh+unit,unit); lns = np.arange(lon-leh,lon+leh+unit,unit)
+    llp = np.meshgrid(lts,lns); #print llp
+    lats.extend(llp[0].flatten()); lons.extend(llp[1].flatten())
 
     return lats,lons
 
