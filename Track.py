@@ -9,11 +9,11 @@ Derived from previous particle tracking work by Manning, Muse, Cui, Warren.
 """
 
 import sys
-import pytz
+#import pytz
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-from track_functions import get_drifter,get_fvcom,get_roms,draw_basemap,uniquecolors,clickmap, points_between, points_square,extend_square,totdis
+from track_functions import get_drifter,get_fvcom,get_roms,draw_basemap,clickmap, points_between, points_square,extend_units,totdis
 from matplotlib import animation
 
 st_run_time = datetime.now() # Caculate execution time with en_run_time
@@ -31,23 +31,31 @@ MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
 GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
 depth = 1    # depth below ocean surface, positive
 track_days = 1     #MODEL track time(days)
-track_way = 'forward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
-image_style = 'plot'      # Two option: 'plot', animation
+track_way = 'backward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
+image_style = 'animation'      # Two option: 'plot', animation
 # You can track form now by specify start_time = datetime.now(pytz.UTC) 
-start_time = datetime(2015,8,10,12,45,0,0,pytz.UTC)#datetime.now(pytz.UTC) 
+#start_time = datetime(2015,10,6,13,0,0,0,pytz.UTC)#datetime.now(pytz.UTC) 
+start_time = datetime.utcnow()
 end_time = start_time + timedelta(track_days)
 model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
 streamline = 'OFF'
-save_dir = '/home/bling/Documents/Results/'
+save_dir = './Results/'
+colors = ['magenta','cyan','olive','blue','orange','green','red','yellow','black','purple']
+utcti = datetime.utcnow(); utct = utcti.strftime('%H')
+locti = datetime.now(); loct = locti.strftime('%H')
+ditnu = int(utct)-int(loct) # the deference between UTC and local time .
+if ditnu < 0:
+    ditnu = int(utct)+24-int(loct)
+locstart_time = start_time - timedelta(hours=ditnu)
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '157410703'#152300811 
+    drifter_ID = '150410701'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (38.734,-73.685)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (42.04375000000001,-70.166330645161281)  # 42.1, -70.6 Point data structure:(lat,lon)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -67,8 +75,8 @@ if Option == 4:
         st_lat = np.random.uniform(41.9,42.1,num)[:]
         st_lon = np.random.uniform(-70.4,-70.6,num)[:]
     if addpointway=='square':
-        centerpoint = (42.0,-70.5); radius = 0.1; number = 3
-        (st_lat,st_lon) = extend_square(centerpoint,radius,number)
+        centerpoint = (41.9,-70.26); unit = 0.04; number = 1
+        (st_lat,st_lon) = extend_units(centerpoint,unit,number)
 
 ############################## Common codes ###################################
 loop_length = []
@@ -82,7 +90,7 @@ if Option == 1:
     drifter_points = dict(lon=[],lat=[])
     model_points = dict(lon=[],lat=[])
     print "Drifter: %s %s %d days"%(drifter_ID,track_way,track_days)
-    start_time = datetime.now(pytz.UTC)-timedelta(track_days) #datetime(2015,1,24,0,0,0,0,pytz.UTC)
+    start_time = datetime.utcnow()-timedelta(track_days) #datetime(2015,1,24,0,0,0,0,pytz.UTC)
     
     drifter = get_drifter(drifter_ID, INPUT_DATA)
     dr_points = drifter.get_track(start_time,track_days)
@@ -128,7 +136,7 @@ if Option == 1:
     
     if streamline == 'ON':
         lonpps,latpps,US,VS,speeds = get_obj.streamlinedata(points,depth,track_way)
-        np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
+        #np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
         image_style = 'animation'
         
     ########################### Plot #####################################
@@ -167,13 +175,13 @@ if Option == 1:
                         dr_points['lat'][-1]+0.01*track_days),fontsize=6,arrowprops=dict(arrowstyle="fancy"))
             def animate(n): # the function of the animation
                 ax.plot(model_points['lon'][:n+1],model_points['lat'][:n+1],'ro-',markersize=6,label=MODEL)
-            anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=250) #
+            anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=500) #
 
 #####################Option 2|3 ########################
 if Option==2 or Option==3:
     stp_num = len(st_lat)
     lon_set = [[]]*stp_num; lat_set = [[]]*stp_num
-    colors=uniquecolors(stp_num) #config colors
+    #colors=uniquecolors(stp_num) #config colors
     print 'You added %d points.' % stp_num,st_lon,st_lat
     if track_way=='backward':
         end_time = start_time 
@@ -237,7 +245,7 @@ if Option==2 or Option==3:
     ######################### 2|3 Features Option #############################    
     if streamline == 'ON':
         lonpps,latpps,US,VS,speeds = get_obj.streamlinedata(points,depth,track_way)
-        np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
+        #np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
         image_style = 'animation' 
         
     if model_boundary_switch=='ON':
@@ -263,7 +271,7 @@ if Option==2 or Option==3:
             for j in range(stp_num):
                 ax.annotate('Start %d'%(j+1), xy=(lon_set[j][0],lat_set[j][0]),xytext=(lon_set[j][0]+0.05,
                             lat_set[j][0]+0.03),fontsize=6,arrowprops=dict(arrowstyle="fancy")) #facecolor=colors[i]'''
-                ax.plot(lon_set[j],lat_set[j],'o-',color=colors[j],markersize=3,label='Start %d'%(j+1)) #markerfacecolor='r',
+                ax.plot(lon_set[j],lat_set[j],'o-',color=colors[j%10],markersize=3,label='Start %d'%(j+1)) #markerfacecolor='r',
     
     if image_style=='animation':
         if streamline == 'ON':
@@ -276,21 +284,21 @@ if Option==2 or Option==3:
                         ax.annotate('Start %d'%(j+1), xy=(lon_set[j][0],lat_set[j][0]),xytext=(lon_set[j][0]+0.01*stp_num,
                                     lat_set[j][0]+0.01*stp_num),fontsize=6,arrowprops=dict(arrowstyle="fancy")) 
                     if n<len(lon_set[j]): #markerfacecolor='r',
-                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j],markersize=4,label='Start %d'%(j+1))
+                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j%10],markersize=4,label='Start %d'%(j+1))
                 draw_basemap(ax, points)  # points is using here
             anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000)#        
             plt.clim(vmin=0, vmax=1)
             plt.colorbar()
         else:
-            draw_basemap(ax, points)
-            for j in range(stp_num):
-                def animate(n): #del ax.collections[:]; del ax.lines[:]; ax.cla();ax.clf()
+            draw_basemap(ax, points)           
+            def animate(n): #del ax.collections[:]; del ax.lines[:]; ax.cla();ax.clf()
+                for j in range(stp_num):
                     if n==0:#facecolor=colors[i]'''
                         ax.annotate('Start %d'%(j+1), xy=(lon_set[j][0],lat_set[j][0]),xytext=(lon_set[j][0]+0.01*stp_num,
                                     lat_set[j][0]+0.01*stp_num),fontsize=6,arrowprops=dict(arrowstyle="fancy")) 
                     if n<len(lon_set[j]): #markerfacecolor='r',
-                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j],markersize=4,label='Start %d'%(j+1))
-                anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=250)
+                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j%10],markersize=4,label='Start %d'%(j+1))
+            anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=500)
                                
 #####################Option 4 ########################
 if Option==4:
@@ -333,44 +341,55 @@ if Option==4:
         ax.plot(po[0],po[1],'bo',markersize=3)
     if streamline == 'ON':
         lonpps,latpps,US,VS,speeds = get_obj.streamlinedata(points,depth,track_way)
-        np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
+        #np.savez('streamline.npz',lonpps=lonpps,latpps=latpps,US=US,VS=VS,speeds=speeds)
     
     ######################### Plot #######################################       
     
-    colors=uniquecolors(stp_num) #config colors
-    plt.suptitle('%.f%% simulated drifters ashore\n%d days, %d m, %s'%
-              (int(round(p)),track_days,depth,start_time.strftime("%d-%b-%Y")))
+    #colors=uniquecolors(stp_num) #config colors
+    
     if streamline == 'ON':
         def animate(n): #del ax.collections[:]; del ax.lines[:]; ;
-            ax.cla()
-            draw_basemap(ax, points)  # points is using here
+            ax.cla()  
+            if track_way=='backward':
+                Time = (locstart_time-timedelta(hours=n)).strftime("%d-%b-%Y %H:%M")
+            else:
+                Time = (locstart_time+timedelta(hours=n)).strftime("%d-%b-%Y %H:%M")
+            plt.suptitle('%.f%% simulated drifters ashore\n%d days, %d m, %s'%(int(round(p)),track_days,depth,Time))
+            if streamline == 'ON':
+                plt.streamplot(lonpps[n],latpps[n],US[n],VS[n], color=speeds[n],arrowsize=4,cmap=plt.cm.cool,density=2.0)
             for j in xrange(stp_num):
-                ax.plot(lon_set[j][0],lat_set[j][0],color=colors[j],marker='x',markersize=4)
+                ax.plot(lon_set[j][0],lat_set[j][0],color=colors[j%10],marker='x',markersize=4)
                 if n>=len(lon_set[j]):
-                    ax.plot(lon_set[j][-1],lat_set[j][-1],'o',color=colors[j],markersize=5)
+                    ax.plot(lon_set[j][-1],lat_set[j][-1],'o',color=colors[j%10],markersize=5)
                 if n<5:                
                     if n<len(lon_set[j]):
-                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j],markersize=4)#,label='Depth=10m'            
+                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j%10],markersize=4)#,label='Depth=10m'            
                 if n>=5:
                     if n<len(lon_set[j]):
-                        ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j],markersize=4)
+                        ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j%10],markersize=4)
+            draw_basemap(ax, points)  # points is using here
         anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000) #        
     
     else:
         draw_basemap(ax, points)  # points is using here
         def animate(n): #del ax.collections[:]; del ax.lines[:]; ax.cla(); ax.lines.remove(line)        
+            if track_way=='backward':
+                Time = (locstart_time-timedelta(hours=n)).strftime("%d-%b-%Y %H:%M")
+            else:
+                Time = (locstart_time+timedelta(hours=n)).strftime("%d-%b-%Y %H:%M")
+            plt.suptitle('%.f%% simulated drifters ashore\n%d days, %d m, %s'%(int(round(p)),track_days,depth,Time))
             del ax.lines[:]        
             for j in xrange(stp_num):
-                ax.plot(lon_set[j][0],lat_set[j][0],color=colors[j],marker='x',markersize=4)
+                ax.plot(lon_set[j][0],lat_set[j][0],color=colors[j%10],marker='x',markersize=4)
                 if n>=len(lon_set[j]):
-                    ax.plot(lon_set[j][-1],lat_set[j][-1],'o',color=colors[j],markersize=5)
+                    ax.plot(lon_set[j][-1],lat_set[j][-1],'o',color=colors[j%10],markersize=5)
                 if n<5:                
                     if n<len(lon_set[j]):
-                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j],markersize=4)#,label='Depth=10m'            
+                        ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j%10],markersize=4)#,label='Depth=10m'            
                 if n>=5:
                     if n<len(lon_set[j]):
-                        ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j],markersize=4)
-        anim = animation.FuncAnimation(fig, animate, frames=max(loop_length),interval=250) #, 
+                        ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j%10],markersize=4)
+        anim = animation.FuncAnimation(fig, animate, frames=max(loop_length),interval=500) #, 
     
 ##################################### The End ##########################################
 en_run_time = datetime.now()
@@ -378,9 +397,7 @@ print 'Take '+str(en_run_time-st_run_time)+' running the code. End at '+str(en_r
 ### Save #########
 #plt.legend(loc=4)
 if image_style=='plot':
-    plt.savefig(save_dir+'%s-%s_%s'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),
-                dpi=400,bbox_inches='tight')
+    plt.savefig(save_dir+'%s-%s_%s'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),dpi=400,bbox_inches='tight')
 if image_style=='animation':#ffmpeg,imagemagick,mencoder fps=20'''
-    anim.save(save_dir+'%s-%s_%s.gif'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),
-              writer='imagemagick',dpi=250) #,,,fps=1
+    anim.save(save_dir+'%s-%s_%s.gif'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),writer='imagemagick',dpi=250) #,,,fps=1
 plt.show()
