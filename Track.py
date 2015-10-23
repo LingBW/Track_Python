@@ -25,16 +25,16 @@ Option 3: Specify the start point with simulated map.
 Option 4: Area(box) track.          
 '''
 ######## Hard codes ##########
-Option = 1 # 1,2,3,4
+Option = 2 # 1,2,3,4
 print 'Option %d'%Option
-MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
+MODEL = 'massbay'     # 'ROMS', 'GOM3','massbay','30yr'
 GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
 depth = 1    # depth below ocean surface, positive
-track_days = 1     #MODEL track time(days)
-track_way = 'backward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
+track_days = 2     #MODEL track time(days)
+track_way = 'forward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
 image_style = 'animation'      # Two option: 'plot', animation
 # You can track form now by specify start_time = datetime.now(pytz.UTC) 
-#start_time = datetime(2015,10,6,13,0,0,0,pytz.UTC)#datetime.now(pytz.UTC) 
+#start_time = datetime(2013,10,19,12,0,0,0)#datetime.now(pytz.UTC) 
 start_time = datetime.utcnow()
 end_time = start_time + timedelta(track_days)
 model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
@@ -50,12 +50,12 @@ locstart_time = start_time - timedelta(hours=ditnu)
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '150410701'#152300811 
+    drifter_ID = '159380731'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (42.04375000000001,-70.166330645161281)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (41.911,-70.330)  # 42.1, -70.6 Point data structure:(lat,lon)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -102,6 +102,8 @@ if Option == 1:
     if track_way=='backward':
         end_time = start_time 
         start_time = end_time - timedelta(track_days)  #''' 
+    print 'Start time: ',start_time
+    print 'End time: ',end_time 
     if MODEL in GRIDS:
         get_obj =  get_fvcom(MODEL)
         print dr_points['time'][-1]
@@ -110,9 +112,9 @@ if Option == 1:
         point,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)
         
     if MODEL=='ROMS':        
-        end_time = dr_points['time'][-1] + timedelta(track_days)
+        
         get_obj = get_roms()
-        url_roms = get_obj.get_url(dr_points['time'][-1],end_time)
+        url_roms = get_obj.get_url(start_time,end_time)
         get_obj.get_data(url_roms)
         point = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)#,DEPTH
         if len(point['lon'])==1:
@@ -398,6 +400,6 @@ print 'Take '+str(en_run_time-st_run_time)+' running the code. End at '+str(en_r
 #plt.legend(loc=4)
 if image_style=='plot':
     plt.savefig(save_dir+'%s-%s_%s'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),dpi=400,bbox_inches='tight')
-if image_style=='animation':#ffmpeg,imagemagick,mencoder fps=20'''
+if image_style=='animation1':#ffmpeg,imagemagick,mencoder fps=20'''
     anim.save(save_dir+'%s-%s_%s.gif'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),writer='imagemagick',dpi=250) #,,,fps=1
 plt.show()
