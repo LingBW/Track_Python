@@ -258,48 +258,39 @@ class track(object):
         '''        
         pass                                 
         
-    def bbox2ij(self, lon, lat, lons, lats, length=0.06):  #0.3/5==0.06
-        """
-        Return tuple of indices of points that are completely covered by the 
-        specific boundary box.
-        i = bbox2ij(lon,lat,bbox)
-        lons,lats = 2D arrays (list) that are the target of the subset, type: np.ndarray
-        bbox = list containing the bounding box: [lon_min, lon_max, lat_min, lat_max]
-    
-        Example
-        -------  
-        >>> i0,i1,j0,j1 = bbox2ij(lat_rho,lon_rho,[-71, -63., 39., 46])
-        >>> h_subset = nc.variables['h'][j0:j1,i0:i1]
-        length: the boundary box.
-        """
-        '''bbox = [lon-length, lon+length, lat-length, lat+length]
-        bbox = np.array(bbox)
-        mypath = np.array([bbox[[0,1,1,0]],bbox[[2,2,3,3]]]).T#'''
-        p = Path.circle((lon,lat),radius=length)
-        points = np.vstack((lons.flatten(),lats.flatten())).T  #numpy.vstack(tup):Stack arrays in sequence vertically
-        tshape = np.shape(lons)
-        inside = []
-        
-        for i in range(len(points)):
-            inside.append(p.contains_point(points[i]))  # .contains_point return 0 or 1
-            
-        inside = np.array(inside, dtype=bool).reshape(tshape)
-        index = np.where(inside==True)
-        
-        '''check if there are no points inside the given area'''        
-        
-        if not index[0].tolist():          # bbox covers no area
-            print 'This point out of the model area or hits the land.'
-            raise Exception()
-        else:
-            return index
-            
-    def nearest_point_index(self, lon, lat, lons, lats):  #,num=4
+    def nearest_point_index(self, lon, lat, lons, lats,rad):  #,num=4
         '''
-        Return the index of the nearest rho point.
+        Return the nearest point(lonp,latp) and distance to origin point(lon,lat).
         lon, lat: the coordinate of start point, float
-        lats, lons: the coordinate of points to be calculated.
+        latp, lonp: the coordinate of points to be calculated.
         '''
+        def bbox2ij(lon, lat, lons, lats, rad):  
+            
+            '''bbox = [lon-length, lon+length, lat-length, lat+length]
+            bbox = np.array(bbox)
+            mypath = np.array([bbox[[0,1,1,0]],bbox[[2,2,3,3]]]).T#'''
+            p = Path.circle((lon,lat),radius=rad)
+            points = np.vstack((lons,lats)).T  #numpy.vstack(tup):Stack arrays in sequence vertically
+            #print 'lons',lons
+            #tshape = np.shape(lons)
+            
+            inside = []
+            
+            for i in range(len(points)):
+                inside.append(p.contains_point(points[i]))  # .contains_point return 0 or 1
+                
+            sidex = np.array(inside, dtype=bool)#.reshape(tshape)
+            index = np.where(sidex==True)
+            
+            '''check if there are no points inside the given area'''        
+            
+            if not index[0].tolist():          # bbox covers no area
+                print 'This point is out of the model area.'
+                raise Exception()
+                
+            else:
+                return index        
+        
         def min_distance(lon,lat,lons,lats):
             '''Find out the nearest distance to (lon,lat),and return lon.distance units: meters'''
             #mapx = Basemap(projection='ortho',lat_0=lat,lon_0=lon,resolution='l')
@@ -314,16 +305,22 @@ class track(object):
             p = dis_set.index(dis)
             lonp = lons[p]; latp = lats[p]
             return lonp,latp,dis       
-        index = self.bbox2ij(lon, lat, lons, lats)        
+        index = bbox2ij(lon, lat, lons, lats,rad)
         lon_covered = lons[index];  lat_covered = lats[index]       
         lonp,latp,distance = min_distance(lon,lat,lon_covered,lat_covered)
         #index1 = np.where(lons==lonp)
         #index2 = np.where(lats==latp)
-        #index = np.intersect1d(index1,index2)
-        #points = np.vstack((lons.flatten(),lats.flatten())).T         
+        #index = np.intersect1d(index1,index2)        
+        #points = np.vstack((lons.flatten(),lats.flatten())).T 
         #index = [i for i in xrange(len(points)) if ([lonp,latp]==points[i]).all()]
+        '''index = []
+        for i in len(points):
+            if np.all([[lonp,latp],points[i]]):
+                index.append(i)'''
+                
+        #index = np.where(points==[lonp,latp])
         #print 'index',index
-        return lonp,latp,distance
+        return lonp,latp,distance  #,lonp,latp
         
     def get_track(self, timeperiod, data):
         pass
@@ -374,9 +371,10 @@ class get_roms(track):
         starttime = starttime
         self.hours = int((endtime-starttime).total_seconds()/60/60) # get total hours
         # time_r = datetime(year=2006,month=1,day=9,hour=1,minute=0)
-        url_oceantime = '''http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his_Best/ESPRESSO_Real-Time_v2_History_Best_Available_best.ncd?time'''
-        url = """http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his_Best/ESPRESSO_Real-Time_v2_History_Best_Available_best.ncd?
-        h[0:1:81][0:1:129],mask_rho[0:1:81][0:1:128],mask_u[0:1:81][0:1:128],mask_v[0:1:80][0:1:129],zeta[{0}:1:{1}][0:1:81][0:1:129],u[{0}:1:{1}][0:1:35][0:1:81][0:1:128],
+        
+        url_oceantime = '''http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his/ESPRESSO_Real-Time_v2_History_Best?time'''
+        url = """http://tds.marine.rutgers.edu:8080/thredds/dodsC/roms/espresso/2013_da/his/ESPRESSO_Real-Time_v2_History_Best?h[0:1:81][0:1:129],
+        mask_rho[0:1:81][0:1:128],mask_u[0:1:81][0:1:128],mask_v[0:1:80][0:1:129],zeta[{0}:1:{1}][0:1:81][0:1:129],u[{0}:1:{1}][0:1:35][0:1:81][0:1:128],
         v[{0}:1:{1}][0:1:35][0:1:80][0:1:129],s_rho[0:1:35],lon_rho[0:1:81][0:1:129],lat_rho[0:1:81][0:1:129],lon_u[0:1:81][0:1:128],lat_u[0:1:81][0:1:128],
         lon_v[0:1:80][0:1:129],lat_v[0:1:80][0:1:129],time[0:1:19523]"""
         try:
@@ -392,14 +390,16 @@ class get_roms(track):
         # get number of hour from 05/18/2013
         t1 = (starttime - datetime(2013,05,18)).total_seconds()/3600 
         t2 = (endtime - datetime(2013,05,18)).total_seconds()/3600
-        t1 = int(round(t1)); t2 = int(round(t2))
+        #t1 = int(round(t1)); t2 = int(round(t2))
         # judge if the starttime and endtime in the model time horizon
-        if not t1 in oceantime or not t2 in oceantime:
+        print starttime, endtime
+        if starttime<fmodtime or starttime>emodtime or endtime<fmodtime or endtime>emodtime:
             print 'Time: Error! Model(ROMS) only works between %s with %s.'%(mstt,mett)
             raise Exception()
-        index1 = np.where(oceantime==t1)[0][0]; #print index1
-        index2 = np.where(oceantime==t2)[0][0]; #print index2
-
+        #index1 = np.where(oceantime==t1)[0][0]; #print index1
+        #index2 = np.where(oceantime==t2)[0][0]; #print index2
+        int1 = oceantime - t1; int2 = oceantime - t2
+        index1 = np.argmin(abs(int1)); index2 = np.argmin(abs(int2))
         url = url.format(index1, index2)
         self.url=url
         
@@ -563,70 +563,6 @@ class get_fvcom(track):
         
         return lonp,latp
         
-    def nearest_point_index(self, lon, lat, lons, lats,rad):  #,num=4
-        '''
-        Return the nearest point(lonp,latp) and distance to origin point(lon,lat).
-        lon, lat: the coordinate of start point, float
-        latp, lonp: the coordinate of points to be calculated.
-        '''
-        def bbox2ij(lon, lat, lons, lats, rad):  
-            
-            '''bbox = [lon-length, lon+length, lat-length, lat+length]
-            bbox = np.array(bbox)
-            mypath = np.array([bbox[[0,1,1,0]],bbox[[2,2,3,3]]]).T#'''
-            p = Path.circle((lon,lat),radius=rad)
-            points = np.vstack((lons,lats)).T  #numpy.vstack(tup):Stack arrays in sequence vertically
-            #print 'lons',lons
-            #tshape = np.shape(lons)
-            
-            inside = []
-            
-            for i in range(len(points)):
-                inside.append(p.contains_point(points[i]))  # .contains_point return 0 or 1
-                
-            sidex = np.array(inside, dtype=bool)#.reshape(tshape)
-            index = np.where(sidex==True)
-            
-            '''check if there are no points inside the given area'''        
-            
-            if not index[0].tolist():          # bbox covers no area
-                print 'This point is out of the model area.'
-                raise Exception()
-                
-            else:
-                return index        
-        
-        def min_distance(lon,lat,lons,lats):
-            '''Find out the nearest distance to (lon,lat),and return lon.distance units: meters'''
-            #mapx = Basemap(projection='ortho',lat_0=lat,lon_0=lon,resolution='l')
-            dis_set = []
-            #x,y = mapx(lon,lat)
-            for i,j in zip(lons,lats):
-                #x2,y2 = mapx(i,j)
-                ss=math.sqrt((lon-i)**2+(lat-j)**2)
-                #ss=math.sqrt((x-x2)**2+(y-y2)**2)
-                dis_set.append(ss)
-            dis = min(dis_set)
-            p = dis_set.index(dis)
-            lonp = lons[p]; latp = lats[p]
-            return lonp,latp,dis       
-        index = bbox2ij(lon, lat, lons, lats,rad)
-        lon_covered = lons[index];  lat_covered = lats[index]       
-        lonp,latp,distance = min_distance(lon,lat,lon_covered,lat_covered)
-        #index1 = np.where(lons==lonp)
-        #index2 = np.where(lats==latp)
-        #index = np.intersect1d(index1,index2)        
-        #points = np.vstack((lons.flatten(),lats.flatten())).T 
-        #index = [i for i in xrange(len(points)) if ([lonp,latp]==points[i]).all()]
-        '''index = []
-        for i in len(points):
-            if np.all([[lonp,latp],points[i]]):
-                index.append(i)'''
-                
-        #index = np.where(points==[lonp,latp])
-        #print 'index',index
-        return lonp,latp,distance  #,lonp,latp
-        
     def get_url(self, starttime, endtime):
         '''
         get different url according to starttime and endtime.
@@ -704,15 +640,16 @@ class get_fvcom(track):
                 print '"30yr" database is unavailable!'
                 raise Exception
             # get model's time horizon(UTC).
-            fmodtime = datetime(1858,11,17) + timedelta(float(mtime[0]))
+            '''fmodtime = datetime(1858,11,17) + timedelta(float(mtime[0]))
             emodtime = datetime(1858,11,17) + timedelta(float(mtime[-1]))
             mstt = fmodtime.strftime('%m/%d/%Y %H:%M')
-            mett = emodtime.strftime('%m/%d/%Y %H:%M')
+            mett = emodtime.strftime('%m/%d/%Y %H:%M') #'''
             # get number of days from 11/17/1858
             t1 = (starttime - datetime(1858,11,17)).total_seconds()/86400 
             t2 = (endtime - datetime(1858,11,17)).total_seconds()/86400
             if not mtime[0]<t1<mtime[-1] or not mtime[0]<t2<mtime[-1]:
-                print 'Time: Error! Model(massbay) only works between %s with %s(UTC).'%(mstt,mett)
+                #print 'Time: Error! Model(massbay) only works between %s with %s(UTC).'%(mstt,mett)
+                print 'Time: Error! Model(massbay) only works between 1978-1-1 with 2014-1-1(UTC).'
                 raise Exception()
             
             tm1 = mtime-t1; #tm2 = mtime-t2
@@ -768,133 +705,6 @@ class get_fvcom(track):
             print 'point position error! shrink_data'
             sys.exit()
         return lonl,latl
-    
-    def boundary_path(self,lon,lat):
-        p = Path.circle((lon,lat),radius=0.03)
-        dis = []
-        for i in self.b_points:
-            if p.contains_point(i):
-                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
-                dis.append(d)
-        if dis:
-            md = min(dis)
-            pa = Path.circle((lon,lat),radius=md+0.005)
-            return pa
-        else: return None
-    
-    def line_path(self,lon,lat):
-        p = Path.circle((lon,lat),radius=0.028)
-        dis = []; bps = []
-        for i in self.b_points:
-            if p.contains_point(i):
-                bps.append((i[0],i[1]))
-                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
-                dis.append(d)
-        print 'length',len(dis)
-        if len(dis)<3 :
-            return None
-        else:
-            dnp = np.array(dis)
-            dis.sort()
-            dis0 = dis[0]; dis1 = dis[1]; dis2 = dis[2]
-            p0 = np.where(dnp==dis0);p1 = np.where(dnp==dis1); p2 = np.where(dnp==dis2)
-            #print '00000',p0[0],p1
-            bps0 = bps[p0[0]]; bps1 = bps[p1[0]]; bps2 = bps[p2[0]]
-            pa = [bps1,bps0,bps2]; #print 'pa',pa
-            #codes = [Path.MOVETO,Path.LINETO,Path.LINETO]
-            path = Path(pa)#,codes
-            return path
-        
-    def eline_path_old(self,lon,lat):
-        '''
-        When drifter close to boundary(less than 0.1),find one nearest point to drifter from boundary points, 
-        then find two nearest boundary points to previous boundary point, create a boundary path using that 
-        three boundary points.
-        '''
-        p = Path.circle((lon,lat),radius=0.1) #0.06
-        dis = []; bps = []
-        for i in self.b_points:
-            if p.contains_point(i):
-                bps.append((i[0],i[1]))
-                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
-                dis.append(d)
-        if len(dis)<3 :
-            return None
-        dnp = np.array(dis)
-        dis.sort()
-        if dis[0]>0.05 :
-            return None
-        
-        else :
-            cdis = []; cbps = []
-            dis0 = dis[0]
-            p = np.where(dnp==dis0)   
-            bps0 = bps[p[0]]
-            p1 = Path.circle(bps0,radius=0.04)
-            for j in bps:
-                if p1.contains_point(j):
-                    cbps.append((j[0],j[1]))
-                    d1 = math.sqrt((lon-j[0])**2+(lat-j[1])**2)
-                    cdis.append(d1)
-            if len(cdis)<3 :
-                return None
-            dnp1 = np.array(cdis)
-            cdis.sort()            
-            cdis1 = cdis[1]; cdis2 = cdis[2]
-            p1 = np.where(dnp1==cdis1); p2 = np.where(dnp1==cdis2)
-            bps1 = cbps[p1[0]]; bps2 = cbps[p2[0]]
-            pa = [bps1,bps0,bps2]; #print 'pa',pa
-            #codes = [Path.MOVETO,Path.LINETO,Path.LINETO]
-            path = Path(pa)#,codes
-            return path
-    
-    def eline_path2(self,lon,lat):
-        '''
-        When drifter close to boundary(less than 0.1),find one nearest point to drifter from boundary points, 
-        then find two nearest boundary points to previous boundary point, create a boundary path using that 
-        three boundary points.
-        '''
-        p = Path.circle((lon,lat),radius=0.02) #0.06
-        dis = []; bps = []; pa = []
-        tlons = []; tlats = []; loca = []
-        for i in self.b_points:
-            if p.contains_point(i):
-                bps.append((i[0],i[1]))
-                d = math.sqrt((lon-i[0])**2+(lat-i[1])**2)
-                dis.append(d)
-        bps = np.array(bps)
-        if not dis:
-            return None
-        else:
-            print "Close to boundary."
-            dnp = np.array(dis)
-            dmin = np.argmin(dnp)
-            lonp = bps[dmin][0]; latp = bps[dmin][1]
-            index1 = np.where(self.lonc==lonp)
-            index2 = np.where(self.latc==latp)
-            elementindex = np.intersect1d(index1,index2) # location 753'''
-            print index1,index2,elementindex  
-            dx = self.pointt[elementindex]; #print dx 
-            for i in dx[0]: # i is a number.
-                #print i  
-                if i ==0 :
-                    continue
-                dx1 = self.pointt[i-1]; #print dx1
-                if 0 in dx1:
-                    loca.append(i-1)
-                else:
-                    for j in dx1:
-                        if j != elementindex[0]+1:
-                            if self.wl[j-1] == 1:
-                                loca.append(j-1)
-                            
-            for i in loca:
-                tlons.append(self.lonc[i]); tlats.append(self.latc[i])
-            tlons.insert(1,lonp); tlats.insert(1,latp)            
-            for i in xrange(len(tlons)):
-                pa.append((tlons[i],tlats[i]))
-            path = Path(pa)#,codes
-            return path
     
     def eline_path(self,lon,lat):
         '''
@@ -1075,40 +885,25 @@ class get_fvcom(track):
             elementindex = np.intersect1d(index1,index2)
             index3 = np.where(self.lons==lonn)
             index4 = np.where(self.lats==latn)
-            nodeindex = np.intersect1d(index3,index4)
+            nodeindex = np.intersect1d(index3,index4); print 'here index'
             ################## boundary 1 ####################
-            pa = self.eline_path(lon,lat)
-            ################## boundary 2 ####################
-            '''if elementindex in b_index:
-                print 'boundary'
-                dss=math.sqrt((lonp-lonn)**2+(latp-latn)**2)
-                pa = Path.circle((lonp,latp),radius=dss)
-                if not pa.contains_point([lon,lat]):
-                    print 'Sorry, point on the land here.Depends on Boundarypoint'
-                    raise Exception()#
-            else :
-                pa = self.boundary_path(lon,lat)#'''   
-            ################## boundary 3 ####################
-            '''if elementindex in b_index:
-                #if ([lonp,latp]==i).all():               
-                nod = nv[:,elementindex]; 
-                if not (nodeindex+1) in nod:
-                    print 'Sorry, point on the land here.Depends on Boundarypoint'
-                    raise Exception()#
-                else :
-                    dss=math.sqrt((lonp-lonn)**2+(latp-latn)**2)
-                    if distance>dss:               
-                        print 'Sorry, point on the land here.Depends on Boundarypoint'
-                        raise Exception()#'''
+            pa = self.eline_path(lon,lat); print 'here boundary_path'
             
             if track_way=='backward' : # backwards case
-                waterdepth = self.h[nodeindex]+self.zeta[-1,nodeindex]
+                if self.modelname == "30yr":
+                    waterdepth = self.h[nodeindex]
+                else:                
+                    waterdepth = self.h[nodeindex]+self.zeta[-1,nodeindex]
                 modpts['time'].append(self.mTime[-1])
             else:
-                waterdepth = self.h[nodeindex]+self.zeta[0,nodeindex]
+                #print 'h,zeta',self.h[nodeindex],self.zeta[0,nodeindex]
+                if self.modelname == "30yr":
+                    waterdepth = self.h[nodeindex]
+                else:
+                    waterdepth = self.h[nodeindex]+self.zeta[0,nodeindex]
                 modpts['time'].append(self.mTime[0])
-            depth_total = self.siglay[:,nodeindex]*waterdepth  
-            layer = np.argmin(abs(depth_total+depth))
+            depth_total = self.siglay[:,nodeindex]*waterdepth; #print 'Here one' 
+            layer = np.argmin(abs(depth_total+depth)); print 'layer',layer
             modpts['layer'].append(layer); 
             if waterdepth<(abs(depth)): 
                 print 'This point is too shallow.Less than %d meter.'%abs(depth)
@@ -1173,34 +968,19 @@ class get_fvcom(track):
                 ################## boundary 1 ####################
         
                 pa = self.eline_path(lon,lat)
-                ################## boundary 2 ####################
-                '''if elementindex in b_index:
-                    print 'boundary'
-                    dss=math.sqrt((lonp-lonn)**2+(latp-latn)**2)
-                    pa = Path.circle((lonp,latp),radius=dss)
-                    if not pa.contains_point([lon,lat]):
-                        print 'Sorry, point on the land here.Depends on Boundarypoint'
-                        raise Exception()#
-                else :
-                    pa = self.boundary_path(lon,lat)#'''   
-                ################## boundary 3 ####################
-                '''if elementindex in b_index:
-                    #if ([lonp,latp]==i).all():               
-                    nod = nv[:,elementindex]; 
-                    if not (nodeindex+1) in nod:
-                        print 'Sorry, point on the land here.Depends on Boundarypoint'
-                        raise Exception()#
-                    else :
-                        dss=math.sqrt((lonp-lonn)**2+(latp-latn)**2)
-                        if distance>dss:               
-                            print 'Sorry, point on the land here.Depends on Boundarypoint'
-                            raise Exception()#'''                   
-                #waterdepth = self.h[nodeindex]+zeta[i+1,nodeindex]
+                
                 if track_way=='backward' : # backwards case
-                    waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
+                    if self.modelname == "30yr":
+                        waterdepth = self.h[nodeindex]
+                    else:                
+                        waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
                     modpts['time'].append(self.mTime[t-i-1])
                 else:
-                    waterdepth = self.h[nodeindex]+self.zeta[i+1,nodeindex]
+                    #print 'h,zeta',self.h[nodeindex],self.zeta[0,nodeindex]
+                    if self.modelname == "30yr":
+                        waterdepth = self.h[nodeindex]
+                    else:
+                        waterdepth = self.h[nodeindex]+self.zeta[i+1,nodeindex]
                     modpts['time'].append(self.mTime[i+1])
                 
                 depth_total = self.siglay[:,nodeindex]*waterdepth  
