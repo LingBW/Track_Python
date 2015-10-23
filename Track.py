@@ -371,7 +371,8 @@ if Option==4:
                         ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j%10],markersize=4)
             draw_basemap(ax, points)  # points is using here
         anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000) #        
-    
+    	plt.clim(vmin=0, vmax=1)
+        plt.colorbar()
     else:
         draw_basemap(ax, points)  # points is using here
         def animate(n): #del ax.collections[:]; del ax.lines[:]; ax.cla(); ax.lines.remove(line)        
