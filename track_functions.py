@@ -401,6 +401,10 @@ class get_roms(track):
         int1 = oceantime - t1; int2 = oceantime - t2
         index1 = np.argmin(abs(int1)); index2 = np.argmin(abs(int2))
         url = url.format(index1, index2)
+        Times = []
+        for i in range(self.hours+1):
+            Times.append(fmodtime+timedelta(hours=i))
+        self.mTime = Times
         self.url=url
         
         return url
@@ -443,7 +447,7 @@ class get_roms(track):
         lonrho,latrho = self.shrink_data(lon,lat,self.lon_rho,self.lat_rho)
         lonu,latu = self.shrink_data(lon,lat,self.lon_u,self.lat_u)
         lonv,latv = self.shrink_data(lon,lat,self.lon_v,self.lat_v)
-        nodes = dict(lon=[lon], lat=[lat])
+        nodes = dict(lon=[lon], lat=[lat], time=[])
 
         try:
             lonrp,latrp = self.nearest_point(lon,lat,lonrho,latrho)
@@ -461,8 +465,10 @@ class get_roms(track):
                 raise Exception()
             if track_way=='backward' : # backwards case
                 waterdepth = self.h[indexr]+self.zeta[-1][indexr][0]
+                nodes['time'].append(self.mTime[-1])
             else:
                 waterdepth = self.h[indexr]+self.zeta[0][indexr][0]
+                nodes['time'].append(self.mTime[0])
             if waterdepth<(abs(depth)): 
                 print 'This point is too shallow.Less than %d meter.'%abs(depth)
                 raise Exception()
@@ -515,9 +521,10 @@ class get_roms(track):
                 
                 if track_way=='backward': # backwards case
                     waterdepth = self.h[indexr]+self.zeta[(t-i-1)][indexr][0]
+                    nodes['time'].append(self.mTime[t-i-1])
                 else:
                     waterdepth = self.h[indexr]+self.zeta[(i+1)][indexr][0]
-                    
+                    nodes['time'].append(self.mTime[i+1])
                 if waterdepth<(abs(depth)): 
                     print 'This point is too shallow.Less than %d meter.'%abs(depth)
                     raise Exception()
@@ -658,7 +665,7 @@ class get_fvcom(track):
             url = url.format(index1, index2)
             Times = []
             for i in range(self.hours+1):
-                Times.append(starttime+timedelta(i))
+                Times.append(starttime+timedelta(hours=i))
             self.mTime = Times
             self.url = url
         #print url
@@ -779,57 +786,70 @@ class get_fvcom(track):
         lonpps,latpps,US,VS,speeds = [],[],[],[],[]
         #uvz = netCDF4.Dataset(self.url)
         #u = uvz.variables['u']; v = uvz.variables['v']; zeta = uvz.variables['zeta']
+        lons = nodes['lons']
+        lats = nodes['lats']
+        size = max((max(lons)-min(lons)),(max(lats)-min(lats)))/1
+        ilon,mlon = min(lons)-size,max(lons)+size
+        ilat,mlat = min(lats)-size,max(lats)+size
+        msize = max((mlon-ilon),(mlat-mlat))*0.71  # shrink model radius      
         
-        lonmax = max(nodes['lons']); lonmin = min(nodes['lons'])
-        latmax = max(nodes['lats']); latmin = min(nodes['lats'])
+        lonmax = max(lons); lonmin = min(lons)
+        latmax = max(lats); latmin = min(lats)
         lon1 = (lonmax+lonmin)/2; lat1 = (latmax+latmin)/2
-        radius = max([lonmax-lonmin,latmax-latmin])*1.5
-        mlon = lon1+radius; ilon = lon1-radius
-        mlat = lat1+radius; ilat = lat1-radius
         
-        latps, lonps = np.mgrid[ilat:mlat:10j, ilon:mlon:10j]#x = np.linspace(-3,3,100)       
+        
+        latps, lonps = np.mgrid[ilat:mlat:30j, ilon:mlon:30j]#x = np.linspace(-3,3,100)       
         latss = latps.flatten();lonss = lonps.flatten()
         
-        lonll,latll = self.shrink_data(lon1,lat1,self.lonc,self.latc,radius*1.5)
-        lonk,latk = self.shrink_data(lon1,lat1,self.lons,self.lats,radius*1.5)
+        lonll,latll = self.shrink_data(lon1,lat1,self.lonc,self.latc,msize)
+        lonk,latk = self.shrink_data(lon1,lat1,self.lons,self.lats,msize)
+        
+        nodeindexs = []; elementindexs = []
+        for j in xrange(len(latss)):
+            try:
+                if self.modelname == "GOM3" or self.modelname == "30yr":
+                    lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.2)
+                    lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.3)
+                if self.modelname == "massbay":
+                    lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.03)
+                    lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.05)
+                
+                index11 = np.where(self.lonc==lonpp)
+                index22 = np.where(self.latc==latpp)
+                elementindex = np.intersect1d(index11,index22); #print index00
+                index3 = np.where(self.lons==lonn)
+                index4 = np.where(self.lats==latn)
+                nodeindex = np.intersect1d(index3,index4)
+                nodeindexs.append(nodeindex); elementindexs.append(elementindex)
+            except:
+                nodeindexs.append(0); elementindexs.append(0)
         t = abs(self.hours)+1
         for i in xrange(t):
             us,vs = [],[]
             print 'Streamline the %dth of %d points.'%(i+1,t)
             for j in xrange(len(latss)):
-                try:
-                    if self.modelname == "GOM3" or self.modelname == "30yr":
-                        lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.2)
-                        lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.3)
-                    if self.modelname == "massbay":
-                        lonpp,latpp = self.nearest_point(lonss[j],latss[j],lonll,latll,0.03)
-                        lonn,latn = self.nearest_point(lonss[j],latss[j],lonk,latk,0.05)
-                    
-                    index11 = np.where(self.lonc==lonpp)
-                    index22 = np.where(self.latc==latpp)
-                    index00 = np.intersect1d(index11,index22); #print index00
-                    index3 = np.where(self.lons==lonn)
-                    index4 = np.where(self.lats==latn)
-                    nodeindex = np.intersect1d(index3,index4)
-                    if track_way=='backward' : # backwards case
-                        waterdepth = self.h[nodeindex]+self.zeta[t-i-1,nodeindex]
-                    else:
-                        waterdepth = self.h[nodeindex]+self.zeta[i,nodeindex]
-                    if waterdepth<(abs(depth)): 
-                        print 'This point is too shallow as less than %d meters.'%abs(depth)
-                        raise Exception()
-                    depth_total = self.siglay[:,nodeindex]*waterdepth  
-                    layer = np.argmin(abs(depth_total-depth))                    
-                    
-                    if track_way=='backward' : # backwards case
-                        us.append(self.u[t-1-i,layer,index00][0]); vs.append(self.v[t-1-i,layer,index00][0])
-                    else:
-                        us.append(self.u[i,layer,index00][0]); vs.append(self.v[i,layer,index00][0])
-                    
-                except:
-                    #print 'out of area'
+                if nodeindexs[j]==0 or elementindex==0 :
                     mi = 0.000000000000000
                     us.append(mi); vs.append(mi)
+                else :             
+                    try:
+                        ni = nodeindexs[j]; ei = elementindexs[j]
+                        if track_way=='backward' : # backwards case
+                            waterdepth = self.h[ni]+self.zeta[t-i-1,ni]
+                        else:
+                            waterdepth = self.h[ni]+self.zeta[i,ni]
+                        
+                        depth_total = self.siglay[:,ni]*waterdepth  
+                        layer = np.argmin(abs(depth_total-depth))                    
+                        
+                        if track_way=='backward' : # backwards case
+                            us.append(self.u[t-1-i,layer,ei][0]); vs.append(self.v[t-1-i,layer,ei][0])
+                        else:
+                            us.append(self.u[i,layer,ei][0]); vs.append(self.v[i,layer,ei][0])                        
+                    except:
+                        #print 'out of area'
+                        mi = 0.000000000000000
+                        us.append(mi); vs.append(mi)
             sh = np.shape(lonps); #print sh,len(us)
             U = np.array(us).reshape(sh); V = np.array(vs).reshape(sh)
             speed = np.sqrt(U*U + V*V);print 'max speed',max(speed.flatten())
@@ -885,9 +905,9 @@ class get_fvcom(track):
             elementindex = np.intersect1d(index1,index2)
             index3 = np.where(self.lons==lonn)
             index4 = np.where(self.lats==latn)
-            nodeindex = np.intersect1d(index3,index4); print 'here index'
+            nodeindex = np.intersect1d(index3,index4); #print 'here index'
             ################## boundary 1 ####################
-            pa = self.eline_path(lon,lat); print 'here boundary_path'
+            pa = self.eline_path(lon,lat); #print 'here boundary_path'
             
             if track_way=='backward' : # backwards case
                 if self.modelname == "30yr":
@@ -903,7 +923,7 @@ class get_fvcom(track):
                     waterdepth = self.h[nodeindex]+self.zeta[0,nodeindex]
                 modpts['time'].append(self.mTime[0])
             depth_total = self.siglay[:,nodeindex]*waterdepth; #print 'Here one' 
-            layer = np.argmin(abs(depth_total+depth)); print 'layer',layer
+            layer = np.argmin(abs(depth_total+depth)); #print 'layer',layer
             modpts['layer'].append(layer); 
             if waterdepth<(abs(depth)): 
                 print 'This point is too shallow.Less than %d meter.'%abs(depth)
@@ -994,7 +1014,142 @@ class get_fvcom(track):
                 return modpts,1
                                 
         return modpts,2
+
+class get_wind(track):
+    '''
+    ####(2009.10.11, 2013.05.19):version1(old) 2009-2013
+    ####(2013.05.19, present): version2(new) 2013-present
+    (2006.01.01 01:00, 2014.1.1 00:00)
+    '''
+    
+    def __init__(self):
+        pass
+    
+    def nearest_point(self, lon, lat, lons, lats, length=0.06):  #0.3/5==0.06
+        '''Find the nearest point to (lon,lat) from (lons,lats),
+           return the nearest-point (lon,lat)
+           author: Bingwei'''
+        p = Path.circle((lon,lat),radius=length)
+        #numpy.vstack(tup):Stack arrays in sequence vertically
+        points = np.vstack((lons.flatten(),lats.flatten())).T  
         
+        insidep = []
+        #collect the points included in Path.
+        for i in xrange(len(points)):
+            if p.contains_point(points[i]):# .contains_point return 0 or 1
+                insidep.append(points[i])  
+        # if insidep is null, there is no point in the path.
+        if not insidep:
+            print 'There is no model-point near the given-point.'
+            raise Exception()
+        #calculate the distance of every points in insidep to (lon,lat)
+        distancelist = []
+        for i in insidep:
+            ss=math.sqrt((lon-i[0])**2+(lat-i[1])**2)
+            distancelist.append(ss)
+        # find index of the min-distance
+        mindex = np.argmin(distancelist)
+        # location the point
+        lonp = insidep[mindex][0]; latp = insidep[mindex][1]
+        
+        return lonp,latp
+        
+    def get_url(self, starttime, endtime):
+        '''
+        get url according to starttime and endtime.
+        '''
+        starttime = starttime
+        self.hours = int((endtime-starttime).total_seconds()/3600) # get total hours
+        # time_r = datetime(year=2006,month=1,day=9,hour=1,minute=0)
+        
+        url_oceantime = 'http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_MET_FORECAST.nc?Times[0:1:72]'
+        url = """http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_MET_FORECAST.nc?XLAT[0:1:140][0:1:182],
+                 XLONG[0:1:140][0:1:182],U10[{0}:1:{1}][0:1:140][0:1:182],V10[{0}:1:{1}][0:1:140][0:1:182]"""
+        try:
+            mTime = netCDF4.Dataset(url_oceantime).variables['Times'][:]
+        except:
+            print 'Wind database is unavailable!'
+            raise Exception()
+        # get model works time horizon(UTC).
+        Times = []
+        for i in mTime:
+            strt = '201'+i[3]+'-'+i[5]+i[6]+'-'+i[8]+i[9]+' '+i[11]+i[12]+':'+i[14]+i[15]
+            Times.append(datetime.strptime(strt,'%Y-%m-%d %H:%M'))
+        fmodtime = Times[0]; emodtime = Times[-1]         
+        if starttime<fmodtime or starttime>emodtime or endtime<fmodtime or endtime>emodtime:
+            print 'Time: Error! Model(massbay) only works between %s with %s(UTC).'%(fmodtime,emodtime)
+            raise Exception()
+        npTimes = np.array(Times)
+        tm1 = npTimes-starttime; #tm2 = mtime-t2
+        index1 = np.argmin(abs(tm1))
+        index2 = index1 + self.hours#'''
+        url = url.format(index1, index2)
+        self.mTime = Times[index1:index2+1]
+        
+        self.url = url
+        
+        return url
+    
+    def shrink_data(self,lon,lat,lons,lats,radius):
+        lont = []; latt = []
+        p = Path.circle((lon,lat),radius)
+        pints = np.vstack((lons.flatten(),lats.flatten())).T
+        for i in range(len(pints)):
+            if p.contains_point(pints[i]):
+                lont.append(pints[i][0])
+                latt.append(pints[i][1])
+        lonl=np.array(lont); latl=np.array(latt)#'''
+        if not lont:
+            print 'point position error! shrink_data'
+            sys.exit()
+        return lonl,latl
+        
+    def get_data(self, url):
+        '''
+        return the data needed.
+        url is from get_roms.get_url(starttime, endtime)
+        '''
+        
+        data = get_nc_data(url,'XLAT','XLONG','Times','U10','V10')
+        self.xlat = data['XLAT'][:]; self.xlong = data['XLONG'][:] 
+        #self.times = data['Times'][:]
+        self.u10,self.v10 = data['U10'], data['V10']
+        
+        return self.mTime
+        
+    def get_uv(self,points):#, depth
+        '''
+        get the nodes of specific time period
+        lon, lat: start point
+        depth: 0~35, the 0th is the bottom.
+        '''
+        
+        lons = points['lons']
+        lats = points['lats']
+        mlon,mlat = (max(lons)+min(lons))/2,(max(lats)+min(lats))/2
+        radius = max((max(lons)-min(lons))/2,(max(lats)-min(lats))/2)
+                
+        
+        ixlong,ixlat = self.shrink_data(mlon,mlat,self.xlong,self.xlat, 2*radius)
+        
+        #nodes = dict(lon=[lon], lat=[lat], time=[])
+        uss,vss = [],[]
+        t = len(self.mTime)
+        for j in xrange(t):         
+            us,vs = [],[]
+            for i in range(len(ixlong)):
+                indexr = np.where(self.xlong==ixlong[i]); #print indexr
+                #indexlat = np.where(self.xlat==ixlat[i])
+                #indexr = np.intersect1d(indexlon,indexlat)
+                #print indexlon,indexlat,indexr
+                if len(indexr[0]) > 1:
+                    print 'Repeat error.',len(indexr),indexr
+                    raise Exception()#'''
+                u,v = self.u10[j][indexr][0],self.v10[j][indexr][0]
+                us.append(u); vs.append(v)
+            uss.append(us); vss.append(vs)
+        
+        return ixlong,ixlat,uss,vss
 class get_drifter(track):
 
     def __init__(self, drifter_id, filename=None):
@@ -1021,6 +1176,11 @@ class get_drifter(track):
             endtime = starttime + timedelta(days=days)
             i = self.__cmptime(starttime, nodes['time'])
             j = self.__cmptime(endtime, nodes['time'])
+            
+            if i == j :
+                print 'No data in given duration.'
+                raise Exception()
+                #return nodes
             nodes['lon'] = nodes['lon'][i:j+1]
             nodes['lat'] = nodes['lat'][i:j+1]
             nodes['time'] = nodes['time'][i:j+1]
