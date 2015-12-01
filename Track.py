@@ -13,7 +13,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-from track_functions import get_drifter,get_fvcom,get_roms,draw_basemap,clickmap, points_between, points_square,extend_units,totdis
+from track_functions import get_drifter,get_fvcom,get_roms,draw_basemap,clickmap, points_between, points_square,extend_units,totdis,get_wind
 from matplotlib import animation
 
 st_run_time = datetime.now() # Caculate execution time with en_run_time
@@ -25,12 +25,12 @@ Option 3: Specify the start point with simulated map.
 Option 4: Area(box) track.          
 '''
 ######## Hard codes ##########
-Option = 2 # 1,2,3,4
+Option = 1 # 1,2,3,4
 print 'Option %d'%Option
-MODEL = 'massbay'     # 'ROMS', 'GOM3','massbay','30yr'
+MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
 GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
 depth = 1    # depth below ocean surface, positive
-track_days = 2     #MODEL track time(days)
+track_days = 1     #MODEL track time(days)
 track_way = 'forward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
 image_style = 'animation'      # Two option: 'plot', animation
 # You can track form now by specify start_time = datetime.now(pytz.UTC) 
@@ -39,6 +39,7 @@ start_time = datetime.utcnow()
 end_time = start_time + timedelta(track_days)
 model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
 streamline = 'OFF'
+wind = 'ON'
 save_dir = './Results/'
 colors = ['magenta','cyan','olive','blue','orange','green','red','yellow','black','purple']
 utcti = datetime.utcnow(); utct = utcti.strftime('%H')
@@ -50,12 +51,12 @@ locstart_time = start_time - timedelta(hours=ditnu)
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '159380731'#152300811 
+    drifter_ID = '1504107020'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (41.911,-70.330)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (38.737,-73.083)  # 42.1, -70.6 Point data structure:(lat,lon)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -129,7 +130,15 @@ if Option == 1:
     print 'Model path length: ',modpath,'\nDrifter path length: ',dripath,'\nDiscrepancy: ',discrepancy,discrepancy/dripath*100
    
     points['lats'].extend(drifter_points['lat']); points['lons'].extend(drifter_points['lon'])
-    points['lats'].extend(model_points['lat']); points['lons'].extend(model_points['lon'])  
+    points['lats'].extend(model_points['lat']); points['lons'].extend(model_points['lon']) 
+    
+    if wind=='ON':        
+        #st = basetime + timedelta(hours =toltime[0]) 
+        #et = basetime + timedelta(hours =toltime[-1])
+        get_obj = get_wind()
+        url_wind = get_obj.get_url(start_time,end_time)
+        wtime = get_obj.get_data(url_wind)
+        X,Y,U,V = get_obj.get_uv(points)#,DEPTH
             
     ############################ 1 Features Option #########################    
     if model_boundary_switch=='ON':
@@ -142,7 +151,10 @@ if Option == 1:
         image_style = 'animation'
         
     ########################### Plot #####################################
-    plt.title('Drifter: {0} {1}'.format(drifter_ID,MODEL))    
+    plt.suptitle('Model: %s'%MODEL)
+    
+    #ax.set_title('Drifter: {0}'.format(drifter_ID))
+    
     #colors=uniquecolors(len(points['lats'])) #config colors
     an2 = str(dr_points['time'][-1].strftime('%m/%d-%H:%M'))    
     
@@ -167,8 +179,24 @@ if Option == 1:
                 ax.plot(model_points['lon'][:n+1],model_points['lat'][:n+1],'ro-',markersize=6,label=MODEL)
                 draw_basemap(ax, points)  # points is using here
             anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000)#        
-            plt.clim(vmin=0, vmax=1)
+            plt.clim(vmin=0, vmax=2)
             plt.colorbar()
+            
+        elif wind == 'ON' :
+            #draw_basemap(ax, points)  # points is using here
+            
+            def animate(n): # the function of the animation
+                ax.cla()
+                plt.title('Drifter: {0} {1}'.format(drifter_ID,point['time'][n].strftime("%F %H:%M")))
+                draw_basemap(ax, points)
+                ax.plot(drifter_points['lon'],drifter_points['lat'],'bo-',markersize=6,label='Drifter')
+                ax.annotate(an2,xy=(dr_points['lon'][-1],dr_points['lat'][-1]),xytext=(dr_points['lon'][-1]+0.01*track_days,
+                            dr_points['lat'][-1]+0.01*track_days),fontsize=6,arrowprops=dict(arrowstyle="fancy"))
+                ax.plot(model_points['lon'][:n+1],model_points['lat'][:n+1],'ro-',markersize=6,label=MODEL)
+                #M = np.hypot(U[n], V[n])
+                Q = ax.quiver(X,Y,U[n],V[n],color='black',pivot='tail',units='xy')
+                plt.quiverkey(Q, 0.5, 0.92, 1, r'$1 \frac{m}{s}$', labelpos='E',fontproperties={'weight': 'bold','size':18})
+            anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=500) #
             
         else:
             draw_basemap(ax, points)  # points is using here
@@ -289,7 +317,7 @@ if Option==2 or Option==3:
                         ax.plot(lon_set[j][:n+1],lat_set[j][:n+1],'o-',color=colors[j%10],markersize=4,label='Start %d'%(j+1))
                 draw_basemap(ax, points)  # points is using here
             anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000)#        
-            plt.clim(vmin=0, vmax=1)
+            plt.clim(vmin=0, vmax=2)
             plt.colorbar()
         else:
             draw_basemap(ax, points)           
@@ -371,7 +399,7 @@ if Option==4:
                         ax.plot(lon_set[j][n-4:n+1],lat_set[j][n-4:n+1],'o-',color=colors[j%10],markersize=4)
             draw_basemap(ax, points)  # points is using here
         anim = animation.FuncAnimation(fig, animate, frames=max(loop_length), interval=1000) #        
-    	plt.clim(vmin=0, vmax=1)
+    	plt.clim(vmin=0, vmax=2)
         plt.colorbar()
     else:
         draw_basemap(ax, points)  # points is using here
@@ -401,6 +429,6 @@ print 'Take '+str(en_run_time-st_run_time)+' running the code. End at '+str(en_r
 #plt.legend(loc=4)
 if image_style=='plot':
     plt.savefig(save_dir+'%s-%s_%s'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),dpi=400,bbox_inches='tight')
-if image_style=='animation1':#ffmpeg,imagemagick,mencoder fps=20'''
+if image_style=='animation':#ffmpeg,imagemagick,mencoder fps=20'''
     anim.save(save_dir+'%s-%s_%s.gif'%(MODEL,track_way,en_run_time.strftime("%d-%b-%Y_%H:%M")),writer='imagemagick',dpi=250) #,,,fps=1
 plt.show()
