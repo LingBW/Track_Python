@@ -11,6 +11,9 @@ from matplotlib.path import Path
 import math
 from mpl_toolkits.basemap import Basemap
 import colorsys
+from sympy import *
+from sympy.geometry import *
+from fractions import Fraction
 
 def distance(lat1, lon1, lat2,lon2):
     """ 
@@ -535,7 +538,6 @@ class get_roms(track):
                 return nodes
             
         return nodes
-
         
 class get_fvcom(track):
     def __init__(self, mod):
@@ -570,6 +572,67 @@ class get_fvcom(track):
         
         return lonp,latp
         
+    def uvreflection(self,f1,f2,b1,b2,v):
+        '''
+        Return reflection point.
+        f2 is a forcast point from f1. 
+        b1,b2 are boundary point.
+        v=(u,v)
+        Format (lon,lat)
+        '''
+        def rotate_vector(v, angle):
+            """Rotate a vector `v` by the given angle(radian)."""
+            x, y = v
+        
+            cos_theta = math.cos(angle)
+            sin_theta = math.sin(angle)
+        
+            nx = x*cos_theta - y*sin_theta
+            ny = x*sin_theta + y*cos_theta
+        
+            return [nx, ny]
+            
+        fl = Line(f1,f2)
+        bl = Line(b1,b2)
+        anchor = intersection(fl,bl)[0]
+        
+        anchor = str(anchor)[6:-1]
+        anchor = anchor.split(','); #print 'anchor:', anchor
+        interpx = Fraction(anchor[0]); interpy = Fraction(anchor[1])    
+        anchor = [float(interpx),float(interpy)]
+        #angle : angle in radians'''
+        ag1 = Line(anchor,b1); ag2 = Line(anchor,b2); ab = Line(anchor,f2)
+        ang = ab.angle_between(ag1)
+        if  ang > pi/2:
+            reag = ab.angle_between(ag2)
+            bline = ag2
+        else :
+            reag = ang
+            bline = ag1
+        #print reag
+        v1 = rotate_vector(v, reag*2)
+        dx = 60*60*v1[0]; dy = 60*60*v1[1]
+        temlon = anchor[0] + (dx/(111111*np.cos(anchor[1]*np.pi/180)))
+        temlat = anchor[1] + dy/111111 #'''
+        fp = (temlon,temlat) #reflection point
+        
+        angle2 = 2*pi-reag*2 ; #print 'angle2:'
+        v2 = rotate_vector(v, angle2)
+        dx = 60*60*v2[0]; dy = 60*60*v2[1]
+        temlon2 = anchor[0] + (dx/(111111*np.cos(anchor[1]*np.pi/180)))
+        temlat2 = anchor[1] + dy/111111 #'''
+        fp2 = (temlon2,temlat2) #reflection point
+        
+        tg = Line(anchor,fp)
+        tg2 = Line(anchor,fp2)
+        #print tg.angle_between(bline)-reag
+        if abs(tg.angle_between(bline)-reag)<abs(tg2.angle_between(bline)-reag) :       
+            fp = (round(fp[0],6),round(fp[1],6))
+        else:
+            fp = (round(fp2[0],6),round(fp2[1],6))
+            
+        return fp #,anchor
+            
     def get_url(self, starttime, endtime):
         '''
         get different url according to starttime and endtime.
@@ -778,8 +841,8 @@ class get_fvcom(track):
                        
             for i in xrange(len(tlons)):
                 pa.append((tlons[i],tlats[i]))
-            path = Path(pa)#,codes
-            return path
+            #path = Path(pa)#,codes
+            return pa
             
     def streamlinedata(self,nodes,depth,track_way):
         
@@ -881,7 +944,7 @@ class get_fvcom(track):
                
         return a, b
         
-    def get_track(self,lon,lat,depth,track_way): #,b_index,nvdepth, 
+    def get_track(self,lon,lat,depth,track_way,bcon): #,b_index,nvdepth, 
         '''
         Get forecast points start at lon,lat
         '''
@@ -931,7 +994,8 @@ class get_fvcom(track):
         except:
             return modpts,0  
             
-        t = abs(self.hours)         
+        t = abs(self.hours) 
+        #mapx = Basemap(projection='ortho',lat_0=lat,lon_0=lon,resolution='l')
         for i in xrange(t):            
             if i!=0 and i%24==0 :
                 #print 'layer,lon,lat,i',layer,lon,lat,i
@@ -950,18 +1014,33 @@ class get_fvcom(track):
                 return modpts,1 #'''
             #print "u[i,layer,elementindex]",u[i,layer,elementindex]
             dx = 60*60*u_t; dy = 60*60*v_t
-            #mapx = Basemap(projection='ortho',lat_0=lat,lon_0=lon,resolution='l')                        
+                                    
             #x,y = mapx(lon,lat)
             #temlon,temlat = mapx(x+dx,y+dy,inverse=True)            
             temlon = lon + (dx/(111111*np.cos(lat*np.pi/180)))
             temlat = lat + dy/111111 #'''
             #########case for boundary 1 #############
             if pa:
+                pat = Path(pa)
                 teml = [(lon,lat),(temlon,temlat)]
+                #print temlon,temlat
                 tempa = Path(teml)
-                if pa.intersects_path(tempa): 
-                    print 'Sorry, point hits land here.path'
-                    return modpts,1 #'''
+                if pat.intersects_path(tempa):
+                    if bcon == 'stop':
+                        modpts['lon'].append(temlon); modpts['lat'].append(temlat); modpts['layer'].append(0)
+                        print 'Sorry, point hits land here. Path. Last point:',temlon,temlat
+                        return modpts,1 #'''
+                    if bcon == 'reflection':
+                        f1 = (lon,lat); f2 = (temlon,temlat); 
+                        v = (u_t1,v_t1)
+                        #fl = Path([f1,f2])
+                        for k in range(len(pa)-1):
+                            kl = Path([pa[k],pa[k+1]])
+                            if tempa.intersects_path(kl):
+                                print 'reflection',f1,f2,pa[k],pa[k+1],v
+                                (temlon,temlat) = self.uvreflection(f1,f2,pa[k],pa[k+1],v)
+                                break
+                        
                 
             #########case for boundary 2 #############
             '''if pa :
@@ -1017,9 +1096,7 @@ class get_fvcom(track):
 
 class get_wind(track):
     '''
-    ####(2009.10.11, 2013.05.19):version1(old) 2009-2013
-    ####(2013.05.19, present): version2(new) 2013-present
-    (2006.01.01 01:00, 2014.1.1 00:00)
+    Take a point,start time, end time, return lists of lons,lats,us,vs in the circle area with the center of given point
     '''
     
     def __init__(self):
@@ -1355,7 +1432,7 @@ def draw_basemap(ax, points, interval_lon=0.3, interval_lat=0.3):
     
     lons = points['lons']
     lats = points['lats']
-    size = max((max(lons)-min(lons)),(max(lats)-min(lats)))/1
+    size = max((max(lons)-min(lons)),(max(lats)-min(lats)))/2
     map_lon = [min(lons)-size,max(lons)+size]
     map_lat = [min(lats)-size,max(lats)+size]
     
@@ -1373,7 +1450,7 @@ def draw_basemap(ax, points, interval_lon=0.3, interval_lat=0.3):
     dmap.drawcoastlines()
     dmap.fillcontinents(color='grey')
     dmap.drawmapboundary()
-    dmap.etopo()
+    #dmap.etopo()
 
 def uniquecolors(N):
     """
