@@ -25,7 +25,7 @@ Option 3: Specify the start point with simulated map.
 Option 4: Area(box) track.          
 '''
 ######## Hard codes ##########
-Option = 1 # 1,2,3,4
+Option = 2 # 1,2,3,4
 print 'Option %d'%Option
 MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
 GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
@@ -37,9 +37,12 @@ image_style = 'animation'      # Two option: 'plot', animation
 #start_time = datetime(2013,10,19,12,0,0,0)#datetime.now(pytz.UTC) 
 start_time = datetime.utcnow()
 end_time = start_time + timedelta(track_days)
-model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
+
+model_boundary_switch = 'ON' # OFF or ON. Only apply to FVCOM
 streamline = 'OFF'
-wind = 'ON'
+wind = 'OFF'
+bcon = 'reflection' #boundary-condition: stop,reflection
+
 save_dir = './Results/'
 colors = ['magenta','cyan','olive','blue','orange','green','red','yellow','black','purple']
 utcti = datetime.utcnow(); utct = utcti.strftime('%H')
@@ -51,12 +54,12 @@ locstart_time = start_time - timedelta(hours=ditnu)
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '1504107020'#152300811 
+    drifter_ID = '150420703'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (38.737,-73.083)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (41.787309, -70.075484)  # 42.1, -70.6 Point data structure:(lat,lon)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -110,7 +113,7 @@ if Option == 1:
         print dr_points['time'][-1]
         url_fvcom = get_obj.get_url(start_time,end_time)
         b_points = get_obj.get_data(url_fvcom) # b_points is model boundary points.
-        point,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)
+        point,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way,bcon)
         
     if MODEL=='ROMS':        
         
@@ -151,9 +154,9 @@ if Option == 1:
         image_style = 'animation'
         
     ########################### Plot #####################################
-    plt.suptitle('Model: %s'%MODEL)
-    
-    #ax.set_title('Drifter: {0}'.format(drifter_ID))
+    # plt.suptitle and ax.set_title are parterner for title, suptitle is the samll one up.
+    plt.suptitle('Model: %s'%MODEL)   
+    ax.set_title('Drifter: {0}'.format(drifter_ID))
     
     #colors=uniquecolors(len(points['lats'])) #config colors
     an2 = str(dr_points['time'][-1].strftime('%m/%d-%H:%M'))    
@@ -227,11 +230,12 @@ if Option==2 or Option==3:
             b_points = np.vstack((lonb.flatten(),latb.flatten())).T#'''
         for i in range(stp_num):
             print 'Running the %dth of %d drifters.'%(i+1,stp_num)
-            point,nu = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way)
+            point,nu = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way,bcon)
             lon_set[i] = point['lon']; lat_set[i] = point['lat']
             loop_length.append(len(point['lon']))
         
         if track_way == 'both':
+            # "both" has both forward track and backward track. The result just is a image, no animation option.
             track_way = 'backward'
             image_style = 'plot'
             end_time = start_time
@@ -239,7 +243,7 @@ if Option==2 or Option==3:
             url_fvcom1 = get_obj.get_url(start_time,end_time)
             for k in range(stp_num):
                 print 'Running the %dth of %d drifters.'%(k+1,stp_num)
-                point,nu = get_obj.get_track(st_lon[k],st_lat[k],depth,track_way)
+                point,nu = get_obj.get_track(st_lon[k],st_lat[k],depth,track_way,bcon)
                 lon_set[k].append(point['lon']); lat_set[k].append(point['lat'])
                 loop_length.append(len(point['lon']))
             track_way = 'both'
@@ -286,6 +290,7 @@ if Option==2 or Option==3:
     plt.suptitle('%s to %s forecast\n-1m depth'%(start_time.strftime('%D'),end_time.strftime('%D')))
     
     if image_style=='plot':
+        #print points
         draw_basemap(ax, points)
         if track_way == 'both':
             ax.plot(lon_set[0][0],lat_set[0][0],'ro-',markersize=3,label='forward')
@@ -302,7 +307,7 @@ if Option==2 or Option==3:
                 ax.annotate('Start %d'%(j+1), xy=(lon_set[j][0],lat_set[j][0]),xytext=(lon_set[j][0]+0.05,
                             lat_set[j][0]+0.03),fontsize=6,arrowprops=dict(arrowstyle="fancy")) #facecolor=colors[i]'''
                 ax.plot(lon_set[j],lat_set[j],'o-',color=colors[j%10],markersize=3,label='Start %d'%(j+1)) #markerfacecolor='r',
-    
+            #plt.axis('equal')
     if image_style=='animation':
         if streamline == 'ON':
             def animate(n): #del ax.collections[:]; del ax.lines[:]; ax.cla();ax.clf()
@@ -332,6 +337,7 @@ if Option==2 or Option==3:
                                
 #####################Option 4 ########################
 if Option==4:
+    # Only apply for model FVCOM. we can add ROM option if it is necessary.
     image_style = 'animation'
     hitland = 0; onland = 0
     stp_num = len(st_lat)
@@ -350,7 +356,7 @@ if Option==4:
         
         for i in range(stp_num):
             print 'Running the %dth of %d drifters.'%(i+1,stp_num)
-            point,nu = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way)
+            point,nu = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way,bcon)
             #point,nu = get_obj.get_track(st_lon[i],st_lat[i],lonc,latc,u,v,b_points,track_way)
             lon_set[i] = point['lon']; lat_set[i] = point['lat']
             loop_length.append(len(point['lon']))
