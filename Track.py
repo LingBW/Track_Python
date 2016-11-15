@@ -13,7 +13,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-from track_functions import get_drifter,get_fvcom,get_roms,draw_basemap,clickmap, points_between, points_square,extend_units,totdis,get_wind
+from track_functions1110 import get_drifter,get_fvcom,get_roms,draw_basemap,clickmap, points_between, points_square,extend_units,totdis,get_wind
 from matplotlib import animation
 
 st_run_time = datetime.now() # Caculate execution time with en_run_time
@@ -27,21 +27,21 @@ Option 4: Area(box) track.
 ######## Hard codes ##########
 Option = 2 # 1,2,3,4
 print 'Option %d'%Option
-MODEL = 'GOM3'     # 'ROMS', 'GOM3','massbay','30yr'
+MODEL = '30yr'     # 'ROMS', 'GOM3','massbay','30yr'
 GRIDS = ['GOM3','massbay','30yr']    # All belong to FVCOM. '30yr' works from 1977/12/31 22:58 to 2014/1/1 0:0
 depth = 1    # depth below ocean surface, positive
 track_days = 1     #MODEL track time(days)
-track_way = 'forward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
-image_style = 'animation'      # Two option: 'plot', animation
+track_way = 'backward'    # Three options: backward, forward and both. 'both' only apply to Option 2 and 3.
+image_style = 'plot'      # Two option: 'plot', animation
 # You can track form now by specify start_time = datetime.now(pytz.UTC) 
-#start_time = datetime(2013,10,19,12,0,0,0)#datetime.now(pytz.UTC) 
-start_time = datetime.utcnow()
+start_time = datetime(2013,10,19,12,0,0,0)#datetime.now(pytz.UTC) 
+#start_time = datetime.utcnow()
 end_time = start_time + timedelta(track_days)
 
-model_boundary_switch = 'ON' # OFF or ON. Only apply to FVCOM
+model_boundary_switch = 'OFF' # OFF or ON. Only apply to FVCOM
 streamline = 'OFF'
 wind = 'OFF'
-bcon = 'reflection' #boundary-condition: stop,reflection
+bcon = 'stop' #boundary-condition: stop,reflection
 
 save_dir = './Results/'
 colors = ['magenta','cyan','olive','blue','orange','green','red','yellow','black','purple']
@@ -54,12 +54,13 @@ locstart_time = start_time - timedelta(hours=ditnu)
 
 ################################## Option ####################################
 if Option==1:
-    drifter_ID = '150420703'#152300811 
+    drifter_ID = '1604207014'#152300811 
     # if raw data, use "drift_X.dat";if want to get drifter data in database, use "None"
     INPUT_DATA = 'drift_X.dat'#'drift_jml_2015_1.dat'      
 
 if Option==2: # user specified pts
-    point1 = (41.787309, -70.075484)  # 42.1, -70.6 Point data structure:(lat,lon)
+    point1 = (41.911,-70.330)  # 42.1, -70.6 Point data structure:(lat,lon)
+    #point1 = (39.042,-73.202)
     extend_style = 'line' #or 'square'
     if extend_style=='line':
         point2 = ()#41.686903, -70.665452#
@@ -79,7 +80,7 @@ if Option == 4:
         st_lat = np.random.uniform(41.9,42.1,num)[:]
         st_lon = np.random.uniform(-70.4,-70.6,num)[:]
     if addpointway=='square':
-        centerpoint = (41.9,-70.26); unit = 0.04; number = 1
+        centerpoint = (41.9,-70.26); unit = 0.04; number = 3
         (st_lat,st_lon) = extend_units(centerpoint,unit,number)
 
 ############################## Common codes ###################################
@@ -102,7 +103,7 @@ if Option == 1:
     print "drifter points: ",len(dr_points['lon']),'\nlast point(',dr_points['lat'][-1],',',dr_points['lon'][-1],')'
     #np.savez('drifter_points.npz',lon=drifter_points['lon'],lat=drifter_points['lat'])
     start_time = dr_points['time'][-1]
-    end_time = dr_points['time'][-1] + timedelta(track_days)
+    end_time = dr_points['time'][-1] + timedelta(1)
     if track_way=='backward':
         end_time = start_time 
         start_time = end_time - timedelta(track_days)  #''' 
@@ -110,20 +111,18 @@ if Option == 1:
     print 'End time: ',end_time 
     if MODEL in GRIDS:
         get_obj =  get_fvcom(MODEL)
-        print dr_points['time'][-1]
-        url_fvcom = get_obj.get_url(start_time,end_time)
-        b_points = get_obj.get_data(url_fvcom) # b_points is model boundary points.
+        #print dr_points['time'][-1]
+        #url_fvcom = get_obj.get_url(start_time,end_time)
+        b_points = get_obj.get_data(start_time,end_time) # b_points is model boundary points.
         point,num = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way,bcon)
         
     if MODEL=='ROMS':        
         
         get_obj = get_roms()
-        url_roms = get_obj.get_url(start_time,end_time)
-        get_obj.get_data(url_roms)
+        url_roms = get_obj.get_data(start_time,end_time)
+        #get_obj.get_data(url_roms)
         point = get_obj.get_track(dr_points['lon'][-1],dr_points['lat'][-1],depth,track_way)#,DEPTH
-        if len(point['lon'])==1:
-            print 'Start point on the land or out of Model area.'
-            sys.exit('Invalid point')
+        
     model_points['lon'].extend(point['lon']); model_points['lat'].extend(point['lat'])
     loop_length.append(len(model_points['lon']))
     #np.savez('model_points.npz',lon=model_points['lon'],lat=model_points['lat'])
@@ -166,7 +165,7 @@ if Option == 1:
         ax.annotate(an2,xy=(dr_points['lon'][-1],dr_points['lat'][-1]),xytext=(dr_points['lon'][-1]+0.01*track_days,
                     dr_points['lat'][-1]+0.01*track_days),fontsize=6,arrowprops=dict(arrowstyle="fancy")) 
         ax.plot(drifter_points['lon'],drifter_points['lat'],'bo-',markersize=6,label='Drifter')
-        ax.plot(model_points['lon'],model_points['lat'],'ro',markersize=4,label='Model')
+        ax.plot(model_points['lon'],model_points['lat'],'ro-',markersize=4,label='Model')
         plt.legend(loc=4)
     
     if image_style=='animation':
@@ -222,8 +221,8 @@ if Option==2 or Option==3:
     
     if MODEL in GRIDS:
         get_obj = get_fvcom(MODEL)
-        url_fvcom = get_obj.get_url(start_time,end_time)
-        b_points = get_obj.get_data(url_fvcom) 
+        #url_fvcom = get_obj.get_url(start_time,end_time)
+        b_points = get_obj.get_data(start_time,end_time) 
         
         '''if model_boundary_switch=='ON': # b_points is model boundary points.
             lonb = lonc[b_index]; latb = latc[b_index]        
@@ -250,8 +249,8 @@ if Option==2 or Option==3:
     
     if MODEL=='ROMS': 
         get_obj = get_roms()
-        url_roms = get_obj.get_url(start_time,end_time)
-        get_obj.get_data(url_roms)
+        romsdata = get_obj.get_data(start_time,end_time)
+        #get_obj.get_data(url_roms)
         for i in range(stp_num):
             point = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way)
             if len(point['lon'])==1:
@@ -351,9 +350,9 @@ if Option==4:
      
     if MODEL in GRIDS:            
         get_obj = get_fvcom(MODEL)
-        url_fvcom = get_obj.get_url(start_time,end_time)
-        b_points = get_obj.get_data(url_fvcom)# b_points is model boundary points.        
-        
+        #url_fvcom = get_obj.get_url(start_time,end_time)
+        #b_points = get_obj.get_data(url_fvcom)# b_points is model boundary points.        
+        b_points = get_obj.get_data(start_time,end_time)
         for i in range(stp_num):
             print 'Running the %dth of %d drifters.'%(i+1,stp_num)
             point,nu = get_obj.get_track(st_lon[i],st_lat[i],depth,track_way,bcon)
